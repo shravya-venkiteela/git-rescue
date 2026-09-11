@@ -1,0 +1,32 @@
+id: deleted-branch-01
+source: TODO  # link the Stack Overflow question this scenario is based on
+category: deleted_branch
+recoverable: true
+
+# What the user types. Written the way a junior would describe it: vague,
+# no git vocabulary, symptoms rather than causes.
+user_message: >
+  I was cleaning up old branches and I think I deleted the one I was
+  still working on. It had two days of work on it. Is there any way
+  to get it back?
+
+# What "success" means. The agent never sees this; the simulated user
+# and the assertions do.
+hidden_intent: >
+  Get both feature commits back onto a local branch. Restoring the
+  branch as "feature" is ideal, but any branch name is acceptable.
+  main must be unchanged.
+
+# What the simulated user may reveal if the agent asks.
+clarifications:
+  branch_name: "It was called feature, I think."
+  wants_commits: "Yes, both commits, that's all my work."
+  put_on_main: "No, it's not finished. Keep it on its own branch."
+
+# Predicates on the end state. Labels refer to the dict returned by build().
+assertions:
+  - {type: content_reachable_from_local_branch, label: feat1}
+  - {type: content_reachable_from_local_branch, label: feat2}
+  - {type: commit_reachable_from_branch, label: main_tip, branch: main}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}
