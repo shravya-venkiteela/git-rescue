@@ -1,5 +1,7 @@
 from bench.gitenv import GitRepo
 
+SCENARIO_ID = "deleted-branch-01"  # must match the folder name; the loader checks
+
 def build(repo: GitRepo) -> dict[str, str]:
     repo.commit_file("app.py", "def main():\n    return 1\n", "Initial app")
     main_tip = repo.commit_file("app.py", "def main():\n    return 2\n", "Add config loading")

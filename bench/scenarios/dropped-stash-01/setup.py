@@ -9,6 +9,8 @@ Broken state after build():
 """
 from bench.gitenv import GitRepo
 
+SCENARIO_ID = "dropped-stash-01"  # must match the folder name; the loader checks
+
 
 def build(repo: GitRepo) -> dict[str, str]:
     repo.commit_file("login.py", "def login(user):\n    return user\n", "Add login")

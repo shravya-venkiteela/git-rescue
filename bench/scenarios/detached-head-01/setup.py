@@ -8,6 +8,8 @@ Broken state after build():
 """
 from bench.gitenv import GitRepo
 
+SCENARIO_ID = "detached-head-01"  # must match the folder name; the loader checks
+
 
 def build(repo: GitRepo) -> dict[str, str]:
     base = repo.commit_file("app.py", "def main():\n    return 1\n", "Initial app")

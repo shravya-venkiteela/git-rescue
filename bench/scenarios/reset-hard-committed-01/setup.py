@@ -1,5 +1,7 @@
 from bench.gitenv import GitRepo
 
+SCENARIO_ID = "reset-hard-committed-01"  # must match the folder name; the loader checks
+
 def verify_broken(repo: GitRepo, labels: dict[str, str]) -> None:
     """Assert the repo is in exactly the broken state described above.
     If this fails, the scenario is wrong, not the agent."""

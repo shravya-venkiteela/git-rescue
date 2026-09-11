@@ -24,13 +24,19 @@ def load(scenario_dir: Path) -> Scenario:
     if missing:
         raise ValueError(f"{scenario_dir.name}: scenario.yaml is missing {sorted(missing)}")
     if spec["id"] != scenario_dir.name:
-        raise ValueError(f"{scenario_dir.name}: id '{spec['id']}' must match the folder name")
+        raise ValueError(f"{scenario_dir.name}: scenario.yaml has id '{spec['id']}'; it belongs in that folder")
 
     #Folder names contain hyphens, so they can't be imported normally.
     module_name = "scenario_" + scenario_dir.name.replace("-", "_")
     import_spec = importlib.util.spec_from_file_location(module_name, scenario_dir / "setup.py")
     module = importlib.util.module_from_spec(import_spec)
     import_spec.loader.exec_module(module)
+
+    #Same check for setup.py: a file pasted into the wrong folder fails here,
+    #with a message naming where it belongs, instead of as confusing test failures.
+    declared = getattr(module, "SCENARIO_ID", None)
+    if declared != scenario_dir.name:
+        raise ValueError(f"{scenario_dir.name}: setup.py has SCENARIO_ID {declared!r}; it belongs in that folder")
 
     for fn in ("build", "verify_broken"):
         if not callable(getattr(module, fn, None)):
