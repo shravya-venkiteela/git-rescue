@@ -1,4 +1,3 @@
-"""Create a scenario skeleton: uv run python -m bench.new_scenario <scenario-id> <category>"""
 import sys
 
 from bench.loader import SCENARIOS_DIR
@@ -22,6 +21,8 @@ assertions: []
 """, encoding="utf-8")
 
 (folder / "setup.py").write_text(f'''from bench.gitenv import GitRepo
+
+SCENARIO_ID = "{scenario_id}"  # must match the folder name; the loader checks
 
 
 def verify_broken(repo: GitRepo, labels: dict[str, str]) -> None:
