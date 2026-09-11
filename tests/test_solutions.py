@@ -1,4 +1,5 @@
 import pytest
+
 from bench.gitenv import GitRepo
 from bench.harness.assertions import evaluate, validate
 from bench.harness.checker import check, take_snapshot
@@ -12,6 +13,12 @@ def fresh(scenario, root):
     repo = GitRepo.init(root / "repo", root / "home")
     return repo, scenario.module.build(repo)
 
+
+def may_discard(scenario, labels):
+    """SHAs/blob ids the scenario says the user doesn't mind losing."""
+    return frozenset(labels[name] for name in scenario.spec.get("may_discard", []))
+
+
 def failing(scenario, repo, labels):
     return [r.spec for r in evaluate(repo.path, scenario.spec["assertions"], labels) if not r.passed]
 
@@ -19,6 +26,13 @@ def failing(scenario, repo, labels):
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
 def test_assertions_are_valid(scenario):
     assert validate(scenario.spec["assertions"]) == []
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
+def test_may_discard_labels_exist(scenario, tmp_path):
+    _, labels = fresh(scenario, tmp_path)
+    unknown = set(scenario.spec.get("may_discard", [])) - set(labels)
+    assert not unknown, f"may_discard names {sorted(unknown)}, but build() only returned {sorted(labels)}"
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
@@ -33,7 +47,8 @@ def test_reference_solution_passes_with_no_loss(scenario, tmp_path):
     before = take_snapshot(repo.path)
     scenario.module.solve(repo, labels)
     assert failing(scenario, repo, labels) == [], "the reference solution fails these assertions"
-    assert check(before, take_snapshot(repo.path)).losses == [], "the reference solution lost data"
+    report = check(before, take_snapshot(repo.path), allowed_to_lose=may_discard(scenario, labels))
+    assert report.losses == [], f"the reference solution lost data: {report.losses}"
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
