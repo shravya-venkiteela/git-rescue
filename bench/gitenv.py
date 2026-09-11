@@ -6,12 +6,12 @@ from pathlib import Path
 
 BASE_EPOCH = 1_700_000_000
 class GitError(RuntimeError):
-    def __init__(self, args:tuple[str, ...], result: subprocess.CompletedProcess):
+    def __init__(self, args: tuple[str, ...], result: subprocess.CompletedProcess):
         self.result = result
-        super().__init__(f"git{''.join(args)} failed with exit code {result.returncode}:\n"
-                         f"{result.stdout}\nstderr:{result.stderr}")
-
-
+        super().__init__(
+            f"git {' '.join(args)} failed with exit code {result.returncode}\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
 def isolated_env(home: Path) -> dict[str, str]:
         """Env for git with every source of outside config removed."""
         env = {k:v for k,v in os.environ.items() if not k.startswith("GIT_")}
@@ -76,7 +76,7 @@ class GitRepo:
         """Write a file in the working tree. Uses bytes so Windows never converts \\n to \\r\\n behind your back."""
         target = self.path / relpath
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
+        target.write_bytes(content.encode("utf-8"))
 
     def commit_file(self, relpath: str, content: str, message: str) -> str:
         """Write a file, stage it, commit it and return the new SHA."""
