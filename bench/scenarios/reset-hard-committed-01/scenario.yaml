@@ -1,0 +1,24 @@
+id: reset-hard-committed-01
+source: TODO  # link the Stack Overflow question this scenario is based on
+category: reset_hard
+recoverable: true
+
+# What the user types. They don't know the words "reset" or "reflog".
+user_message: >
+  I wanted to undo my last change so I ran a command I found online, and
+  now my last two commits are gone from git log. I didn't push them
+  anywhere. Can I get them back?
+
+# What "success" means. The agent never sees this.
+hidden_intent: >
+  main back exactly where it was before the reset, with both commits.
+  Not on a separate branch: the user wants their branch as it was.
+
+clarifications:
+  where_to_put_them: "Back on main, like nothing happened."
+  which_commits: "Both of the ones that disappeared."
+
+assertions:
+  - {type: branch_at_commit, label: target, branch: main}  # exactly where it was
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

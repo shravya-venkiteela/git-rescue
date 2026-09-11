@@ -1,5 +1,6 @@
 """Create a scenario skeleton: uv run python -m bench.new_scenario <scenario-id> <category>"""
 import sys
+
 from bench.loader import SCENARIOS_DIR
 
 scenario_id, category = sys.argv[1], sys.argv[2]
@@ -24,11 +25,20 @@ assertions: []
 
 
 def verify_broken(repo: GitRepo, labels: dict[str, str]) -> None:
-    
+    # Write this FIRST: the check that fails unless this is really a {category} scenario.
     raise NotImplementedError
 
 
 def build(repo: GitRepo) -> dict[str, str]:
     raise NotImplementedError
+
+
+def solve(repo: GitRepo, labels: dict[str, str]) -> None:
+    # The correct rescue, done by hand.
+    raise NotImplementedError
+
+
+# Plausible mistakes: each fixes the symptom but violates this user's intent.
+WRONG_FIXES = {{}}
 ''', encoding="utf-8")
 print(f"created {folder}")
