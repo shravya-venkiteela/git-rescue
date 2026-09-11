@@ -1,0 +1,23 @@
+id: dropped-stash-01
+source: TODO  # link the Stack Overflow question this scenario is based on
+category: dropped_stash
+recoverable: true
+
+user_message: >
+  I stashed some changes yesterday so I could fix something else, and
+  today I ran git stash drop because I thought I had already put them
+  back. They are not in my files. Are they gone forever?
+
+hidden_intent: >
+  Get the stashed edits to login.py back into the working tree.
+  Committing them afterwards is also acceptable. main must be unchanged.
+
+clarifications:
+  which_changes: "It was my work on login.py."
+  commit_or_not: "I just want the changes back in my files."
+
+assertions:
+  - {type: worktree_file_matches_commit, path: login.py, label: stash}
+  - {type: commit_reachable_from_branch, label: main_tip, branch: main}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

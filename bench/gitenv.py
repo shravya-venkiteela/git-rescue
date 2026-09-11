@@ -103,3 +103,10 @@ class GitRepo:
  
     def is_clean(self) -> bool:
         return self.git("status", "--porcelain", "--untracked-files=all") == ""
+    def unreachable_commits(self) -> set[str]:
+        """Commits that still exist in .git/objects but that no branch, tag,
+        stash, or reflog points to. `git stash drop` leaves its stash here.
+        Recoverable until `git gc` deletes them, but invisible to git log
+        and git reflog; only a full scan with fsck finds them."""
+        out = self.git("fsck", "--unreachable", "--no-reflogs")
+        return {line.split()[2] for line in out.splitlines() if line.startswith("unreachable commit ")}
