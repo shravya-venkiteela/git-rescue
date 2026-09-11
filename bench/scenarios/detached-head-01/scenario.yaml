@@ -1,0 +1,32 @@
+id: detached-head-01
+source: TODO 
+category: detached_head
+recoverable: true
+
+#What the user types. Written the way a junior would describe it: vague,
+#no git vocabulary, symptoms rather than causes.
+user_message: >
+  I checked out an old commit to test something, fixed a couple of bugs
+  while I was there and committed them, then went back to main. Now my
+  fixes are gone. Did I lose them?
+
+#What "success" means. The agent never sees this; the simulated user
+#and the assertions do.
+hidden_intent: >
+  Keep both fix commits. Acceptable outcomes: the fixes on a new branch,
+  or the fixes applied on top of main. main's existing commits must survive.
+
+#What the simulated user may reveal if the agent asks.
+clarifications:
+  wants_commits: "Yes, I need both fixes."
+  branch_name: "I don't mind what it's called."
+  put_on_main: "Either is fine, I just don't want to lose them."
+
+#Predicates on the end state. Labels refer to the dict returned by build().
+#Predicates, not exact states: several different end states are correct.
+assertions:
+  - {type: content_reachable_from_local_branch, label: fix1}
+  - {type: content_reachable_from_local_branch, label: fix2}
+  - {type: commit_reachable_from_branch, label: main_tip, branch: main}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}
