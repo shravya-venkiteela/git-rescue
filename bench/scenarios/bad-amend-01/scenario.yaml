@@ -1,0 +1,24 @@
+id: bad-amend-01
+source: TODO  
+category: bad_amend
+recoverable: true
+
+user_message: >
+  I meant to make a new commit for my login fix but I accidentally
+  used --amend, and now my "Add signup stub" commit is gone and its
+  message got replaced. I want them as two separate commits again.
+
+hidden_intent: >
+  The original "Add signup stub" commit back in main's history,
+  unchanged, and the login fix committed on main as its own commit on
+  top. Nothing pushed.
+
+clarifications:
+  pushed: "No, I haven't pushed."
+  keep_login_fix: "Yes, I still want the login fix, just as its own commit."
+
+assertions:
+  - {type: content_reachable_from_branch, label: original, branch: main}
+  - {type: branch_file_matches_commit, label: amended, branch: main, path: login.py}  # fix committed, not just staged
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

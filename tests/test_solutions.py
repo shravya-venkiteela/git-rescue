@@ -1,5 +1,4 @@
 import pytest
-
 from bench.gitenv import GitRepo
 from bench.harness.assertions import evaluate, validate
 from bench.harness.checker import check, take_snapshot
@@ -7,6 +6,7 @@ from bench.loader import load_all
 
 SCENARIOS = load_all()
 WRONG = [(s, name) for s in SCENARIOS for name in getattr(s.module, "WRONG_FIXES", {})]
+ALT = [(s, name) for s in SCENARIOS for name in getattr(s.module, "ALT_SOLUTIONS", {})]
 
 
 def fresh(scenario, root):
@@ -49,6 +49,16 @@ def test_reference_solution_passes_with_no_loss(scenario, tmp_path):
     assert failing(scenario, repo, labels) == [], "the reference solution fails these assertions"
     report = check(before, take_snapshot(repo.path), allowed_to_lose=may_discard(scenario, labels))
     assert report.losses == [], f"the reference solution lost data: {report.losses}"
+
+
+@pytest.mark.parametrize("scenario,alt_name", ALT, ids=lambda x: x if isinstance(x, str) else x.id)
+def test_alternative_solution_passes_with_no_loss(scenario, alt_name, tmp_path):
+    repo, labels = fresh(scenario, tmp_path)
+    before = take_snapshot(repo.path)
+    scenario.module.ALT_SOLUTIONS[alt_name](repo, labels)
+    assert failing(scenario, repo, labels) == [], f"correct alternative '{alt_name}' fails these assertions"
+    report = check(before, take_snapshot(repo.path), allowed_to_lose=may_discard(scenario, labels))
+    assert report.losses == [], f"alternative '{alt_name}' lost data: {report.losses}"
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)

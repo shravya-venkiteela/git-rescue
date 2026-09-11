@@ -1,0 +1,24 @@
+id: wrong-branch-01
+source: TODO  
+category: wrong_branch
+recoverable: true
+
+user_message: >
+  I made a feature branch but I just realised my last two commits went
+  onto main instead. I haven't pushed anything. How do I move them to
+  the feature branch and get main back to normal?
+
+hidden_intent: >
+  Both commits on feature (same or copied SHAs), main back exactly at
+  base with no extra commits. Nothing pushed, so rewriting main is fine.
+
+clarifications:
+  pushed: "No, nothing is pushed yet."
+  branch_name: "The branch is called feature."
+
+assertions:
+  - {type: content_reachable_from_branch, label: wip1, branch: feature}
+  - {type: content_reachable_from_branch, label: wip2, branch: feature}
+  - {type: branch_at_commit, label: base, branch: main}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

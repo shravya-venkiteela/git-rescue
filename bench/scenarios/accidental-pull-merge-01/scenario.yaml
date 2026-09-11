@@ -1,0 +1,23 @@
+id: accidental-pull-merge-01
+source: TODO  
+category: accidental_merge
+recoverable: true
+
+user_message: >
+  I did git pull and it made a "Merge branch main" commit that I didn't
+  want. I haven't pushed. I just want my branch back to how it was
+  before I pulled, with my own commit still there.
+
+hidden_intent: >
+  main back exactly at the user's own commit (local_tip), merge gone,
+  the user's commit kept. The teammate's work stays on origin/main for
+  a later rebase. Nothing pushed.
+
+clarifications:
+  pushed: "No, I haven't pushed the merge."
+  keep_my_commit: "Yes, my api stub commit has to stay."
+
+assertions:
+  - {type: branch_at_commit, label: local_tip, branch: main}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

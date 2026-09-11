@@ -15,6 +15,7 @@ def assertion(fn: Callable[..., bool]) -> Callable[..., bool]:
     REGISTRY[fn.__name__] = fn
     return fn
 
+
 def _run(repo: Path, *args: str, stdin: bytes | None = None) -> subprocess.CompletedProcess:
     env = isolated_env(Path(tempfile.gettempdir()) / "git-rescue-assert-home")
     env["GIT_OPTIONAL_LOCKS"] = "0"
@@ -33,6 +34,7 @@ def _normalize(data: bytes) -> bytes:
     #A user's git may check files out with CRLF. The question is whether
     #the work came back, not which line endings it came back with.
     return data.replace(b"\r\n", b"\n")
+
 
 @assertion
 def head_attached(repo: Path) -> bool:
@@ -59,14 +61,31 @@ def branch_at_commit(repo: Path, sha: str, branch: str) -> bool:
     return result.returncode == 0 and result.stdout.decode().strip() == sha
 
 
+def _content_on(repo: Path, sha: str, *where: str) -> bool:
+    """True if the change made in sha appears, by patch id, in the history
+    named by `where` (e.g. "--branches" or "refs/heads/feature")."""
+    target = _patch_ids(repo, "-1", sha)
+    return bool(target) and target <= _patch_ids(repo, *where)
+
+
 @assertion
 def content_reachable_from_local_branch(repo: Path, sha: str) -> bool:
     """The change made in sha is on some local branch, either as sha itself
     or as a copy with a new SHA (cherry-pick, rebase)."""
     if _run(repo, "for-each-ref", "--contains", sha, "--format=x", "refs/heads").stdout.strip():
         return True
-    target = _patch_ids(repo, "-1", sha)
-    return bool(target) and target <= _patch_ids(repo, "--branches")
+    return _content_on(repo, sha, "--branches")
+
+
+@assertion
+def content_reachable_from_branch(repo: Path, sha: str, branch: str) -> bool:
+    """Like content_reachable_from_local_branch, but on one specific branch."""
+    ref = f"refs/heads/{branch}"
+    if _run(repo, "rev-parse", "--verify", "--quiet", ref).returncode != 0:
+        return False
+    if _run(repo, "merge-base", "--is-ancestor", sha, ref).returncode == 0:
+        return True
+    return _content_on(repo, sha, ref)
 
 
 @assertion
@@ -77,6 +96,28 @@ def worktree_file_matches_commit(repo: Path, sha: str, path: str) -> bool:
     if not file.exists() or expected.returncode != 0:
         return False
     return _normalize(file.read_bytes()) == _normalize(expected.stdout)
+
+
+@assertion
+def worktree_file_has_blob(repo: Path, sha: str, path: str) -> bool:
+    """The file in the working folder has exactly the content of blob sha.
+    For work that only ever existed as a blob, e.g. staged but never committed."""
+    file = repo / path
+    expected = _run(repo, "cat-file", "blob", sha)
+    if not file.exists() or expected.returncode != 0:
+        return False
+    return _normalize(file.read_bytes()) == _normalize(expected.stdout)
+
+
+@assertion
+def branch_file_matches_commit(repo: Path, sha: str, branch: str, path: str) -> bool:
+    """The file as committed on branch's tip equals the file in sha. Unlike
+    the worktree checks, uncommitted edits don't count."""
+    actual = _run(repo, "show", f"refs/heads/{branch}:{path}")
+    expected = _run(repo, "show", f"{sha}:{path}")
+    if actual.returncode != 0 or expected.returncode != 0:
+        return False
+    return _normalize(actual.stdout) == _normalize(expected.stdout)
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,23 @@
+id: reset-hard-staged-01
+source: TODO 
+category: reset_hard_staged
+recoverable: true
+
+user_message: >
+  I had changes to cart.py that I'd done git add on but hadn't committed
+  yet. Then I ran git reset --hard to clean up something else and the
+  changes are gone. There's no commit for them. Is it hopeless?
+
+hidden_intent: >
+  Get the staged version of cart.py back into the working folder.
+  Staged or unstaged afterwards is fine. main unchanged.
+
+clarifications:
+  which_file: "cart.py, the checkout function."
+  did_you_add: "Yes, I ran git add on it before the reset."
+
+assertions:
+  - {type: worktree_file_has_blob, path: cart.py, label: staged_blob}
+  - {type: branch_at_commit, label: main_tip, branch: main}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}
