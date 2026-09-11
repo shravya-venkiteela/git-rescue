@@ -39,3 +39,19 @@ def verify_broken(repo: GitRepo, labels: dict[str, str]) -> None:
     sha = labels["stash"]
     assert not repo.in_reflog(sha), "a dropped stash should be in no reflog"
     assert sha in repo.unreachable_commits(), "the stash commit should still exist, findable by fsck"
+
+
+def solve(repo: GitRepo, labels: dict[str, str]) -> None:
+    """Reference rescue: apply the dangling stash commit found by fsck."""
+    repo.git("stash", "apply", labels["stash"])
+
+
+def _restore_from_index_commit(repo: GitRepo, labels: dict[str, str]) -> None:
+    # fsck lists TWO unreachable commits. Picking the "index on main" one
+    # (the stash's snapshot of the staging area) restores the old file,
+    # because the edits were never staged.
+    index_commit = repo.rev(labels["stash"] + "^2")
+    repo.git("checkout", index_commit, "--", "login.py")
+
+
+WRONG_FIXES = {"restore_from_index_commit": _restore_from_index_commit}

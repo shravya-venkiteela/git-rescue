@@ -27,6 +27,6 @@ clarifications:
 assertions:
   - {type: content_reachable_from_local_branch, label: feat1}
   - {type: content_reachable_from_local_branch, label: feat2}
-  - {type: commit_reachable_from_branch, label: main_tip, branch: main}
+  - {type: branch_at_commit, label: main_tip, branch: main}
   - {type: head_attached}
   - {type: no_operation_in_progress}
