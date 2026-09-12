@@ -108,3 +108,87 @@ def test_unparsable_is_its_own_category():
 def test_recovered_runs_are_categorized_as_recovered():
     r, _ = run("deleted-branch-01", [{"commands": [f"git branch feature {FEAT2}"], "explanation": ""}])
     assert r.category == "recovered"
+
+
+# --- B2: unrestricted shell -------------------------------------------------
+
+def run_shell(scenario_id, replies, **kwargs):
+    from bench.baselines.unrestricted_shell import UnrestrictedShellSystem
+    backend = ScriptedBackend(replies)
+    return run_scenario(SCENARIOS[scenario_id], UnrestrictedShellSystem(backend, **kwargs)), backend
+
+
+def test_shell_system_sees_command_output():
+    """The whole point of B2: it can read what a command printed and use it."""
+    _, backend = run_shell("deleted-branch-01", [
+        {"command": "git reflog", "reason": "look for the lost commits"},
+        {"done": True, "explanation": "Saw the reflog."},
+    ])
+    assert "You ran: git reflog" in backend.calls[1]
+    assert "exit code 0" in backend.calls[1] and "commit:" in backend.calls[1]
+
+
+def test_shell_system_can_recover_by_investigating_then_acting():
+    r, _ = run_shell("deleted-branch-01", [
+        {"command": "git reflog", "reason": "find the lost commits"},
+        {"command": f"git branch feature {FEAT2}", "reason": "recreate the branch"},
+        {"done": True, "explanation": "Recreated feature."},
+    ])
+    assert r.recovered and r.category == "recovered" and r.commands == 2
+
+
+def test_shell_system_can_destroy_work_with_no_guardrails():
+    """B2 has no backup and no confirmation, so the checker must see the loss.
+    Without this, 'zero data loss' would be untestable against the baseline."""
+    r, _ = run_shell("detached-head-01", [
+        {"command": "git reset --hard HEAD~2", "reason": "clean slate"},
+        {"done": True, "explanation": "Reset."},
+    ])
+    assert r.practical_loss > 0 and not r.recovered
+
+
+def test_shell_system_stops_when_done():
+    r, _ = run_shell("deleted-branch-01", [{"done": True, "explanation": "Nothing to do."}])
+    assert r.commands == 0 and r.category == "no_commands_proposed"
+
+
+def test_shell_system_runs_out_of_turns_gracefully():
+    # Distinct commands, or repeat suppression would collapse them into one.
+    replies = [{"command": f"git log -{n}", "reason": "look"} for n in range(1, 5)]
+    r, _ = run_shell("deleted-branch-01", replies, max_turns=3)
+    assert r.commands == 3 and r.error is None and "turns" in [e for e in r.events if e["type"] == "say"][0]["message"]
+
+
+def test_shell_system_is_told_when_a_command_is_blocked():
+    _, backend = run_shell("deleted-branch-01", [
+        {"command": "git -c core.pager=evil log", "reason": "peek"},
+        {"done": True, "explanation": "stopped"},
+    ])
+    assert "BLOCKED" in backend.calls[1]
+
+
+def test_repeated_command_is_refused_not_re_run():
+    """Every B2 run hit its turn cap, and on average only 8 of 15 commands
+    were distinct: the model repeats itself instead of progressing. A repeat
+    gives the same result, so the turn is spent telling it that."""
+    r, backend = run_shell("deleted-branch-01", [
+        {"command": "git status", "reason": "look"},
+        {"command": "git status", "reason": "look again"},
+        {"done": True, "explanation": "done"},
+    ])
+    assert r.commands == 1, "the duplicate must not reach git"
+    assert "already ran" in backend.calls[2]
+
+
+def test_distinct_command_count_is_recorded():
+    r, _ = run_shell("deleted-branch-01", [
+        {"command": "git status", "reason": "a"},
+        {"command": "git reflog", "reason": "b"},
+        {"done": True, "explanation": ""},
+    ])
+    assert r.commands == 2 and r.distinct_commands == 2
+
+
+def test_model_is_told_how_many_turns_remain():
+    _, backend = run_shell("deleted-branch-01", [{"done": True, "explanation": ""}], max_turns=7)
+    assert "7 turns left" in backend.calls[0]

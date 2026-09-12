@@ -75,6 +75,7 @@ class RunResult:
     practical_loss: int               # items a junior can no longer find
     backup_only: int                  # items only `git rescue undo` can bring back
     commands: int
+    distinct_commands: int   # repeated identical commands are wasted turns
     blocked_commands: int
     questions: int
     unanswered_questions: int
@@ -130,6 +131,7 @@ def run_scenario(scenario, system, repeat: int = 0, prebuilt=None, max_commands:
             absolute_loss=len(loss.absolute), practical_loss=len(loss.practical),
             backup_only=len(loss.backup_only),
             commands=sum(1 for c in commands if not c["blocked"]),
+            distinct_commands=len({" ".join(c["argv"]) for c in commands if not c["blocked"]}),
             blocked_commands=sum(1 for c in commands if c["blocked"]),
             questions=user.asked, unanswered_questions=len(user.unanswered),
             error=error, seconds=round(time.monotonic() - start, 2),
@@ -164,6 +166,13 @@ def summarize(results: list[RunResult]) -> str:
             f" {unparsed:>5}/{n:<3} {sum(r.error is not None for r in rs):>7}"
         )
     lines.append("")
+    lines.append("commands (distinct / total, and how often the turn budget was exhausted):")
+    for name in sorted({r.system for r in results}):
+        rs = [r for r in results if r.system == name]
+        total, distinct = sum(r.commands for r in rs), sum(r.distinct_commands for r in rs)
+        repeats = f"{distinct}/{total}" if total else "0/0"
+        lines.append(f"  {name:30} distinct={repeats}")
+    lines.append("")
     lines.append("why runs ended:")
     for name in sorted({r.system for r in results}):
         counts = Counter(r.category for r in results if r.system == name)
@@ -174,16 +183,20 @@ def summarize(results: list[RunResult]) -> str:
 def build_system(name: str, args):
     """Fake systems take no arguments; model-backed ones need a backend."""
     from bench.baselines.description_only import DescriptionOnlySystem
+    from bench.baselines.unrestricted_shell import UnrestrictedShellSystem
     from bench.harness.fake_systems import SYSTEMS
     from bench.harness.llm import OllamaBackend
 
     if name in SYSTEMS:
         return SYSTEMS[name]()
     backend = OllamaBackend(model=args.model, num_ctx=args.num_ctx, seed=args.seed)
+    if name == "unrestricted_shell":
+        return UnrestrictedShellSystem(backend, max_turns=args.max_turns)
     return DescriptionOnlySystem(backend, allow_questions=(name == "description_only"))
 
 
-ALL_SYSTEMS = ["reference", "wrong_fix", "do_nothing", "description_only", "description_only_no_questions"]
+MODEL_SYSTEMS = ["description_only", "description_only_no_questions", "unrestricted_shell"]
+ALL_SYSTEMS = ["reference", "wrong_fix", "do_nothing"] + MODEL_SYSTEMS
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -194,6 +207,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--model", default="qwen2.5:7b", help="Ollama model for model-backed systems")
     parser.add_argument("--num-ctx", type=int, default=8192)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--max-turns", type=int, default=15, help="turn budget for unrestricted_shell")
     args = parser.parse_args(argv)
 
     scenarios = [s for s in load_all() if not args.scenario or s.id in args.scenario]
