@@ -18,9 +18,12 @@ hidden_intent: >
 
 #What the simulated user may reveal if the agent asks.
 clarifications:
-  wants_commits: "Yes, I need both fixes."
-  branch_name: "I don't mind what it's called."
+  wants_the_commits: "Yes, I need both fixes."
+  new_branch_name: "I don't mind what it's called."
   put_on_main: "Either is fine, I just don't want to lose them."
+  pushed_to_remote: "No, I haven't pushed anything."
+  current_branch_name: "I'm on main now."
+  commit_hash_known: "No idea, I don't know how to find hashes."
 
 #Predicates on the end state. Labels refer to the dict returned by build().
 #Predicates, not exact states: several different end states are correct.

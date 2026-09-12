@@ -14,8 +14,11 @@ hidden_intent: >
   top. Nothing pushed.
 
 clarifications:
-  pushed: "No, I haven't pushed."
-  keep_login_fix: "Yes, I still want the login fix, just as its own commit."
+  pushed_to_remote: "No, I haven't pushed."
+  keep_the_login_fix: "Yes, I still want the login fix, just as its own commit."
+  current_branch_name: "I'm on main."
+  command_you_ran: "I used git commit --amend by accident."
+  commit_hash_known: "No, I don't know any hashes."
 
 assertions:
   - {type: content_reachable_from_branch, label: original, branch: main}

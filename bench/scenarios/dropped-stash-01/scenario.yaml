@@ -13,8 +13,12 @@ hidden_intent: >
   Committing them afterwards is also acceptable. main must be unchanged.
 
 clarifications:
-  which_changes: "It was my work on login.py."
-  commit_or_not: "I just want the changes back in my files."
+  which_file_changed: "It was my work on login.py."
+  commit_or_leave_uncommitted: "I just want the changes back in my files."
+  other_commands_run: "No, I stashed it and later dropped it, nothing else."
+  pushed_to_remote: "No, I haven't pushed."
+  current_branch_name: "I'm on main."
+  commit_hash_known: "No, I don't know any hashes."
 
 assertions:
   - {type: worktree_file_matches_commit, path: login.py, label: stash}

@@ -2,13 +2,23 @@ from __future__ import annotations
 import re
 
 IDK = "I don't know."
+MIN_OVERLAP = 2  #shared words needed before an answer is given
 STOPWORDS = {"the", "you", "your", "did", "was", "were", "what", "which", "where", "how",
              "and", "for", "are", "any", "them", "this", "that", "with", "have", "has",
-             "want", "should", "would", "could", "can", "does", "then", "there", "put", "not"}
+             "want", "should", "would", "could", "can", "does", "then", "there", "put",
+             "not", "get", "got", "just", "into", "from", "when", "why", "who", "yes", "run"}
+
+
+def _stem(word: str) -> str:
+    for suffix in ("ping", "ning", "ting", "ing", "ed", "es", "s"):
+        if len(word) > len(suffix) + 2 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
 
 
 def _words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-z]+", text.lower()) if len(w) >= 3 and w not in STOPWORDS}
+    found = re.findall(r"[a-z]+", text.lower())
+    return {_stem(w) for w in found if len(w) >= 3 and w not in STOPWORDS}
 
 
 class SimulatedUser:
@@ -23,7 +33,7 @@ class SimulatedUser:
         if self.asked > self.max_questions:
             return "Please just fix it, I've answered enough questions."
         q = _words(question)
-        best, best_score = None, 0
+        best, best_score = None, MIN_OVERLAP - 1
         for key in sorted(self.clarifications):
             score = len(q & _words(key.replace("_", " ")))
             if score > best_score:

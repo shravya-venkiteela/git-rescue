@@ -19,9 +19,12 @@ hidden_intent: >
 
 # What the simulated user may reveal if the agent asks.
 clarifications:
-  branch_name: "It was called feature, I think."
-  wants_commits: "Yes, both commits, that's all my work."
+  deleted_branch_name: "It was called feature, I think."
+  wants_the_commits: "Yes, both commits, that's all my work."
   put_on_main: "No, it's not finished. Keep it on its own branch."
+  pushed_to_remote: "No, nothing was pushed."
+  current_branch_name: "I'm on main."
+  commit_hash_known: "No, I don't know any hashes."
 
 # Predicates on the end state. Labels refer to the dict returned by build().
 assertions:

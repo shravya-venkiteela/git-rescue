@@ -118,11 +118,26 @@ def test_write_file_stays_in_the_working_tree(built, path):
 
 
 def test_simulated_user_answers_from_clarifications():
-    u = SimulatedUser({"pushed": "No, nothing is pushed.", "branch_name": "It's called feature."})
-    assert u.answer("Have you pushed these commits anywhere?") == "No, nothing is pushed."
-    assert u.answer("What was the branch name?") == "It's called feature."
+    u = SimulatedUser({"pushed_to_remote": "No, nothing is pushed.",
+                       "deleted_branch_name": "It's called feature."})
+    assert u.answer("Have you pushed these commits to a remote?") == "No, nothing is pushed."
+    assert u.answer("What was the name of the deleted branch?") == "It's called feature."
     assert u.answer("Do you like cats?") == IDK
     assert u.unanswered == ["Do you like cats?"]
+
+
+def test_one_shared_word_is_not_enough_to_answer():
+    """A real transcript: this question shares only "changes" with the key,
+    and answering it produced a wrong reply that corrupted the model's next
+    command. A wrong answer is worse than no answer."""
+    u = SimulatedUser({"which_file_changed": "It was my work on login.py."})
+    assert u.answer("Did you run any other git commands between stashing and dropping the changes?") == IDK
+    assert u.answer("Which file had the changes you lost?") == "It was my work on login.py."
+
+
+def test_word_endings_do_not_break_matching():
+    u = SimulatedUser({"pushed_to_remote": "No."})
+    assert u.answer("Are you pushing this to a remote?") == "No."
 
 
 def test_simulated_user_stops_after_max_questions():

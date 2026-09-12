@@ -13,8 +13,12 @@ hidden_intent: >
   Staged or unstaged afterwards is fine. main unchanged.
 
 clarifications:
-  which_file: "cart.py, the checkout function."
-  did_you_add: "Yes, I ran git add on it before the reset."
+  which_file_changed: "cart.py, the checkout function."
+  did_you_git_add: "Yes, I ran git add on it before the reset."
+  command_you_ran: "git reset --hard, to clean up something else."
+  pushed_to_remote: "No, nothing pushed."
+  current_branch_name: "I'm on main."
+  commit_hash_known: "No, I don't know any hashes."
 
 assertions:
   - {type: worktree_file_has_blob, path: cart.py, label: staged_blob}
