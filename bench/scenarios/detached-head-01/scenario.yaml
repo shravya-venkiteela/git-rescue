@@ -25,6 +25,7 @@ clarifications:
 #Predicates on the end state. Labels refer to the dict returned by build().
 #Predicates, not exact states: several different end states are correct.
 assertions:
+  - {type: untracked_file_preserved, path: notes.txt, label: bystander}  # unrelated work must survive
   - {type: content_reachable_from_local_branch, label: fix1}
   - {type: content_reachable_from_local_branch, label: fix2}
   - {type: commit_reachable_from_branch, label: main_tip, branch: main}

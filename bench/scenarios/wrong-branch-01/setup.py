@@ -1,18 +1,35 @@
-from bench.gitenv import GitRepo
+"""Committed to the wrong branch: the user created a feature branch, forgot
+to switch to it, and committed two changes to main.
 
-SCENARIO_ID = "wrong-branch-01"  #must match the folder name; the loader checks
+Broken state after build():
+  - main has two commits that belong on feature.
+  - feature exists but is still at base, where it was created.
+  - Nothing is lost: the work is safe, it's just in the wrong place.
+    The rescue must MOVE it, and moving is where work gets lost.
+  - notes.txt is unrelated untracked work that `clean -fd` would destroy.
+"""
+from bench.gitenv import GitRepo
+from bench.harness.checker import blob_id
+
+BYSTANDER = "notes.txt"  # unrelated uncommitted work; no copy exists in git
+BYSTANDER_TEXT = "TODO: ask about the deploy script\nremember: staging creds rotate friday\n"
+
+SCENARIO_ID = "wrong-branch-01"  # must match the folder name; the loader checks
+
 
 def verify_broken(repo: GitRepo, labels: dict[str, str]) -> None:
     """Assert the repo is in exactly the broken state described above.
     If this fails, the scenario is wrong, not the agent."""
+    assert (repo.path / BYSTANDER).read_text() == BYSTANDER_TEXT, "bystander file should be present"
+    assert BYSTANDER in repo.git("ls-files", "--others"), "bystander should be untracked"
     assert repo.head_is_attached(), "HEAD should be on main"
     assert repo.git("symbolic-ref", "--short", "HEAD") == "main", "the user is on main"
     assert repo.rev("refs/heads/main") == labels["wip2"], "main should have the misplaced commits"
     assert repo.rev("refs/heads/feature") == labels["base"], "feature should still be at base"
-    assert repo.is_clean(), "working tree should be clean"
+    assert repo.is_clean(ignore_untracked=True), "working tree should be clean"
 
-    #The defining check: nothing is lost. Unlike every recovery scenario so
-    #far, the work is on a branch; it's just the wrong one.
+    # The defining check: nothing is lost. Unlike every recovery scenario so
+    # far, the work is on a branch; it's just the wrong one.
     for label in ("wip1", "wip2"):
         assert "refs/heads/main" in repo.refs_containing(labels[label]), f"{label} should be on main"
         assert "refs/heads/feature" not in repo.refs_containing(labels[label]), f"{label} should not be on feature"
@@ -22,13 +39,17 @@ def build(repo: GitRepo) -> dict[str, str]:
     repo.commit_file("app.py", "def main():\n    return 1\n", "Initial app")
     base = repo.commit_file("README.md", "# App\n", "Add readme")
 
-    #The user creates the branch, but `git branch` doesn't switch to it.
+    # The user creates the branch, but `git branch` doesn't switch to it.
     repo.git("branch", "feature")
 
     wip1 = repo.commit_file("search.py", "def search(q):\n    return []\n", "Add search stub")
     wip2 = repo.commit_file("search.py", "def search(q):\n    return [q]\n", "Return query from search")
 
-    return {"base": base, "wip1": wip1, "wip2": wip2}
+    # An unrelated note the user was keeping: never added, never committed.
+    repo.write(BYSTANDER, BYSTANDER_TEXT)
+    bystander = blob_id(BYSTANDER_TEXT.encode())
+
+    return {"base": base, "wip1": wip1, "wip2": wip2, "bystander": bystander}
 
 
 def solve(repo: GitRepo, labels: dict[str, str]) -> None:
@@ -39,7 +60,7 @@ def solve(repo: GitRepo, labels: dict[str, str]) -> None:
 
 
 def _cherry_pick_then_reset(repo: GitRepo, labels: dict[str, str]) -> None:
-    #Also correct: copy the commits to feature (new SHAs), then move main back.
+    # Also correct: copy the commits to feature (new SHAs), then move main back.
     repo.git("checkout", "--quiet", "feature")
     repo.git("cherry-pick", labels["wip1"], labels["wip2"])
     repo.git("checkout", "--quiet", "main")
@@ -50,22 +71,31 @@ ALT_SOLUTIONS = {"cherry_pick_then_reset": _cherry_pick_then_reset}
 
 
 def _move_feature_only(repo: GitRepo, labels: dict[str, str]) -> None:
-    #Half a fix: the work is on feature now, but main still has it too.
+    # Half a fix: the work is on feature now, but main still has it too.
     repo.git("branch", "--force", "feature", labels["wip2"])
 
 
 def _reset_main_only(repo: GitRepo, labels: dict[str, str]) -> None:
-    #The dangerous half: main is clean, and the work is now on no branch.
+    # The dangerous half: main is clean, and the work is now on no branch.
     repo.git("reset", "--quiet", "--hard", labels["base"])
 
 
 def _revert_on_main(repo: GitRepo, labels: dict[str, str]) -> None:
-    #The right answer IF main had been pushed. This user hasn't pushed, so
-    #rewriting is fine and two extra revert commits are clutter they didn't ask for.
+    # The right answer IF main had been pushed. This user hasn't pushed, so
+    # rewriting is fine and two extra revert commits are clutter they didn't ask for.
     repo.git("revert", "--no-edit", labels["wip2"], labels["wip1"])
 
 
+def _reset_and_clean_everything(repo: GitRepo, labels: dict[str, str]) -> None:
+    # "Start from a totally clean state", a common piece of advice. The reset
+    # is right; `clean -fd` also deletes the user's untracked notes, and no
+    # reflog, stash or fsck can bring those back.
+    repo.git("reset", "--quiet", "--hard", labels["base"])
+    repo.git("clean", "-fdq")
+
+
 WRONG_FIXES = {
+    "reset_and_clean_everything": _reset_and_clean_everything,
     "move_feature_only": _move_feature_only,
     "reset_main_only": _reset_main_only,
     "revert_on_main": _revert_on_main,

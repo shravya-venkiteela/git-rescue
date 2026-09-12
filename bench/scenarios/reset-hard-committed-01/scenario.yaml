@@ -19,6 +19,7 @@ clarifications:
   which_commits: "Both of the ones that disappeared."
 
 assertions:
+  - {type: untracked_file_preserved, path: notes.txt, label: bystander}  # unrelated work must survive
   - {type: branch_at_commit, label: target, branch: main}  # exactly where it was
   - {type: head_attached}
   - {type: no_operation_in_progress}

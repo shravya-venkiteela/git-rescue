@@ -120,6 +120,17 @@ def branch_file_matches_commit(repo: Path, sha: str, branch: str, path: str) -> 
     return _normalize(actual.stdout) == _normalize(expected.stdout)
 
 
+@assertion
+def untracked_file_preserved(repo: Path, sha: str, path: str) -> bool:
+    """A file that exists only in the working tree still has its content.
+    Nothing in git holds a copy of an untracked file, so if a rescue deletes
+    it, it is gone for good. `sha` is its blob id, recorded at build time."""
+    from bench.harness.checker import blob_id
+
+    file = repo / path
+    return file.exists() and blob_id(_normalize(file.read_bytes())) == sha
+
+
 @dataclass(frozen=True)
 class Result:
     spec: dict

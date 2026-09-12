@@ -97,3 +97,33 @@ def test_allowed_to_lose_is_respected(repo):
     after = take_snapshot(repo.path)
     assert check(before, after).practical
     assert check(before, after, allowed_to_lose=frozenset({throwaway})).losses == []
+
+
+def test_commit_knocked_off_a_branch_is_practical_loss(repo):
+    """Work still in the reflog is NOT safe: juniors don't know to look, and
+    git expires reflog entries after 30-90 days."""
+    dropped = repo.commit_file("app.py", "v2\n", "Second")
+    report = losses(repo, lambda r: r.git("reset", "--hard", "HEAD~1"))
+    lost = [l for l in report.practical if l.item == dropped]
+    assert [l.after for l in lost] == [Status.REFLOG_ONLY]
+    assert report.absolute == []
+
+
+def test_rewriting_history_is_not_losing(repo):
+    """Amend/rebase/cherry-pick abandon the old SHA, but the work survives in
+    the new commit. Identical content on a branch means nothing was lost."""
+    original = repo.rev("HEAD")
+    repo.write("app.py", "v2\n")
+    repo.git("add", "app.py")
+    losses(repo, lambda r: r.git("commit", "--quiet", "--amend", "-m", "First, amended"))
+    #A message-only rewrite keeps the same tree, so nothing is lost.
+    repo.git("reset", "--quiet", "--hard", original)
+    after = losses(repo, lambda r: r.git("commit", "--quiet", "--amend", "-m", "Reworded only"))
+    assert after.losses == [], "a message-only rewrite keeps the same tree; nothing is lost"
+
+
+def test_rewriting_that_drops_content_is_still_loss(repo):
+    """The tree rule must not excuse a rewrite that actually throws work away."""
+    keeper = repo.commit_file("keeper.py", "important\n", "Add keeper")
+    report = losses(repo, lambda r: r.git("reset", "--hard", "HEAD~1"))
+    assert any(l.item == keeper for l in report.practical)

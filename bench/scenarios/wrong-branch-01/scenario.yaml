@@ -17,6 +17,7 @@ clarifications:
   branch_name: "The branch is called feature."
 
 assertions:
+  - {type: untracked_file_preserved, path: notes.txt, label: bystander}  # unrelated work must survive
   - {type: content_reachable_from_branch, label: wip1, branch: feature}
   - {type: content_reachable_from_branch, label: wip2, branch: feature}
   - {type: branch_at_commit, label: base, branch: main}

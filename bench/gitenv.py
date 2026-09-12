@@ -101,8 +101,14 @@ class GitRepo:
         still find it with `git reflog`."""
         return sha in self.git("rev-list", "--reflog").split()
  
-    def is_clean(self) -> bool:
-        return self.git("status", "--porcelain", "--untracked-files=all") == ""
+    def is_clean(self, ignore_untracked: bool = False) -> bool:
+        """No uncommitted changes. By default untracked files count as changes;
+        pass ignore_untracked=True for scenarios that deliberately leave an
+        untracked bystander file in the working tree."""
+        mode = "no" if ignore_untracked else "all"
+        return self.git("status", "--porcelain", f"--untracked-files={mode}") == ""
+
+    
     def unreachable_commits(self) -> set[str]:
         """Commits that still exist in .git/objects but that no branch, tag,
         stash, or reflog points to. `git stash drop` leaves its stash here.

@@ -1,12 +1,19 @@
 from bench.gitenv import GitRepo
+from bench.harness.checker import blob_id
 
-SCENARIO_ID = "accidental-pull-merge-01"  #must match the folder name; the loader checks
+BYSTANDER = "notes.txt"  #unrelated uncommitted work; no copy exists in git
+BYSTANDER_TEXT = "TODO: ask about the deploy script\nremember: staging creds rotate friday\n"
+
+SCENARIO_ID = "accidental-pull-merge-01"  # must match the folder name; the loader checks
+
 
 def verify_broken(repo: GitRepo, labels: dict[str, str]) -> None:
     """Assert the repo is in exactly the broken state described above.
     If this fails, the scenario is wrong, not the agent."""
+    assert (repo.path / BYSTANDER).read_text() == BYSTANDER_TEXT, "bystander file should be present"
+    assert BYSTANDER in repo.git("ls-files", "--others"), "bystander should be untracked"
     assert repo.head_is_attached(), "HEAD should be on main"
-    assert repo.is_clean(), "working tree should be clean"
+    assert repo.is_clean(ignore_untracked=True), "working tree should be clean"
 
     assert repo.rev("refs/heads/main") == labels["merge"], "main should be at the merge commit"
     parents = repo.git("rev-list", "--parents", "-1", labels["merge"]).split()[1:]
@@ -26,7 +33,7 @@ def build(repo: GitRepo) -> dict[str, str]:
     upstream.git("checkout", "--quiet", "main")
     repo.git("remote", "add", "origin", "../upstream")
 
-    #A teammate pushes work upstream.
+    #A teammate pushes work upstream...
     upstream_tip = upstream.commit_file("docs.md", "# Docs\n", "Add docs")
 
     #while the user commits locally, then pulls without --rebase.
@@ -36,7 +43,12 @@ def build(repo: GitRepo) -> dict[str, str]:
     #contains the remote URL, the most platform-sensitive part of this build.
     merge = repo.rev("HEAD")
 
-    return {"base": base, "local_tip": local_tip, "upstream_tip": upstream_tip, "merge": merge}
+    #An unrelated note the user was keeping: never added, never committed.
+    repo.write(BYSTANDER, BYSTANDER_TEXT)
+    bystander = blob_id(BYSTANDER_TEXT.encode())
+
+    return {"base": base, "local_tip": local_tip, "upstream_tip": upstream_tip, "merge": merge,
+            "bystander": bystander}
 
 
 def solve(repo: GitRepo, labels: dict[str, str]) -> None:

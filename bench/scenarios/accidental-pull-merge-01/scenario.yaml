@@ -17,7 +17,13 @@ clarifications:
   pushed: "No, I haven't pushed the merge."
   keep_my_commit: "Yes, my api stub commit has to stay."
 
+# The merge commit itself: the user asked for it to be gone, so the
+# checker must not count discarding it as data loss. Its two parents are
+# NOT listed, so a rescue that drops the user's own commit still fails.
+may_discard: [merge]
+
 assertions:
+  - {type: untracked_file_preserved, path: notes.txt, label: bystander}  # unrelated work must survive
   - {type: branch_at_commit, label: local_tip, branch: main}
   - {type: head_attached}
   - {type: no_operation_in_progress}
