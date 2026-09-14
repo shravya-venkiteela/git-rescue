@@ -183,6 +183,7 @@ def summarize(results: list[RunResult]) -> str:
 def build_system(name: str, args):
     """Fake systems take no arguments; model-backed ones need a backend."""
     from bench.baselines.description_only import DescriptionOnlySystem
+    from bench.baselines.rescue_agent import RescueAgentSystem
     from bench.baselines.unrestricted_shell import UnrestrictedShellSystem
     from bench.harness.fake_systems import SYSTEMS
     from bench.harness.llm import OllamaBackend
@@ -192,10 +193,12 @@ def build_system(name: str, args):
     backend = OllamaBackend(model=args.model, num_ctx=args.num_ctx, seed=args.seed)
     if name == "unrestricted_shell":
         return UnrestrictedShellSystem(backend, max_turns=args.max_turns)
+    if name == "rescue_agent":
+        return RescueAgentSystem(backend, budget=args.budget)
     return DescriptionOnlySystem(backend, allow_questions=(name == "description_only"))
 
 
-MODEL_SYSTEMS = ["description_only", "description_only_no_questions", "unrestricted_shell"]
+MODEL_SYSTEMS = ["description_only", "description_only_no_questions", "unrestricted_shell", "rescue_agent"]
 ALL_SYSTEMS = ["reference", "wrong_fix", "do_nothing"] + MODEL_SYSTEMS
 
 
@@ -208,6 +211,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--num-ctx", type=int, default=8192)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max-turns", type=int, default=15, help="turn budget for unrestricted_shell")
+    parser.add_argument("--budget", type=int, default=12, help="investigation tool budget for rescue_agent")
     args = parser.parse_args(argv)
 
     scenarios = [s for s in load_all() if not args.scenario or s.id in args.scenario]
