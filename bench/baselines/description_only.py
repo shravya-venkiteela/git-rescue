@@ -34,7 +34,7 @@ class DescriptionOnlySystem:
             session.events.append({
                 "type": "model_reply", "attempts": reply.attempts,
                 "seconds": round(reply.seconds, 2), "parsed": reply.parsed is not None,
-                "text": reply.text,
+                "text": reply.text, "transport_error": reply.transport_error,
             })
             if reply.parsed is None:
                 session.say("The model did not return usable JSON.")

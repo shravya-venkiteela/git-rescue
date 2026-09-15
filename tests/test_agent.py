@@ -140,3 +140,34 @@ def test_questions_are_answered_and_then_a_plan_follows():
 def test_unparsable_output_is_a_clean_failure():
     r, _ = agent_run("deleted-branch-01", ["here is some prose"])
     assert not r.recovered and r.error is None and r.category == "unparsable_output"
+
+@pytest.mark.parametrize("params", ["count=10", ["count", 10], 10, None])
+def test_params_of_any_shape_do_not_crash_the_run(built, params):
+    """A real model sent params as a string and crashed the agent. Any
+    shape the model invents must be tolerated, not trusted."""
+    run, _, _ = investigate("deleted-branch-01", [
+        {"tool": "reflog", "params": params, "why": "look"},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built)
+    assert run.plan is not None, f"params={params!r} broke the run"
+
+
+def test_the_agent_stops_instead_of_looping_forever(built):
+    """Replies that are neither a tool call nor a plan do not spend the tool
+    budget, so a separate cap is what actually ends the run."""
+    run, backend, _ = investigate("deleted-branch-01", [{"why": "thinking"}] * 200, built, budget=4)
+    assert run.plan is None and "no plan after" in run.gave_up
+    assert len(backend.calls) <= 4 * 2 + 8
+
+
+def test_an_unreachable_backend_is_not_blamed_on_the_model():
+    """A dead Ollama server produced 'unparsable_output', which reads as a
+    bad model. It is a different failure and must be labelled as one."""
+    class Dead:
+        name = "dead"
+        def json_reply(self, prompt, system=None):
+            from bench.harness.llm import Reply
+            return Reply("", None, 3, 0.0, ["<request failed>"], transport_error="connection refused")
+    r = run_scenario(SCENARIOS["deleted-branch-01"], RescueAgentSystem(Dead()))
+    assert r.category == "backend_unavailable"
+    assert "could not reach the model" in [e for e in r.events if e["type"] == "say"][0]["message"]

@@ -53,17 +53,21 @@ def _prompt() -> str:
 class RescueAgent:
     """Produces a plan. Execution is someone else's job (executor.execute)."""
 
-    def __init__(self, backend, budget: int = 12, max_plan_retries: int = 2):
+    def __init__(self, backend, budget: int = 12, max_plan_retries: int = 2,
+                 max_iterations: int | None = None):
         self.backend = backend
         self.budget = budget
         self.max_plan_retries = max_plan_retries
+        # Replies that are neither a tool call nor a plan (or repeats) do not
+        # spend budget, so without this a confused model loops forever.
+        self.max_iterations = max_iterations or (budget * 2 + 8)
 
     def investigate(self, repo, user_message: str, ask=None, log=None) -> AgentRun:
         run = AgentRun()
         history = [f"The user says: {user_message}"]
         used, seen_tools, retries = 0, set(), 0
 
-        while True:
+        for iteration in range(self.max_iterations):
             left = self.budget - used
             if left <= 0:
                 history.append("Your investigation budget is used up. Submit a plan now, "
@@ -72,10 +76,11 @@ class RescueAgent:
             if log is not None:
                 log({"type": "model_reply", "parsed": reply.parsed is not None,
                      "attempts": reply.attempts, "seconds": round(reply.seconds, 2),
-                     "text": reply.text})
+                     "text": reply.text, "transport_error": reply.transport_error})
 
             if reply.parsed is None:
-                run.gave_up = "the model did not return usable JSON"
+                run.gave_up = (f"could not reach the model: {reply.transport_error}"
+                               if reply.transport_error else "the model did not return usable JSON")
                 return run
 
             if "plan" in reply.parsed:
@@ -126,3 +131,6 @@ class RescueAgent:
             if log is not None:
                 log({"type": "tool_call", "tool": name, "params": params, "output": output})
             history.append(f"You ran the {name} tool.\nOutput:\n{output[:2000]}")
+
+        run.gave_up = f"no plan after {self.max_iterations} exchanges"
+        return run

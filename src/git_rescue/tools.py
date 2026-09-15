@@ -142,7 +142,11 @@ def call(repo: Path, name: str, params: dict) -> str:
     if name == "operation_state":
         return operation_state(repo)
 
-    clean = {k: v for k, v in (params or {}).items() if k in TOOLS[name].params}
+    # A model may send params as a string, a list, or nothing at all.
+    # Anything that is not an object is ignored rather than crashing the run.
+    if not isinstance(params, dict):
+        params = {}
+    clean = {k: v for k, v in params.items() if k in TOOLS[name].params}
     for key in ("ref", "a", "b"):
         if key in clean and not _valid_ref(repo, str(clean[key])):
             return f"ERROR: '{clean[key]}' is not a ref this repository knows. Use a value you have seen in output."

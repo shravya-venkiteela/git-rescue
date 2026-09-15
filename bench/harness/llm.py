@@ -16,6 +16,7 @@ class Reply:
     attempts: int            # how many tries it took (parse failures are retried)
     seconds: float
     raw_attempts: list[str] = field(default_factory=list)
+    transport_error: str = ""   # set when the server could not be reached at all
 
 
 class OllamaBackend:
@@ -54,11 +55,12 @@ class OllamaBackend:
         """Ask for JSON, retrying if the model returns something unparseable.
         Parse failures are counted, not hidden: for small models they are a
         result worth reporting, not noise to sweep up."""
-        start, raw = time.monotonic(), []
+        start, raw, transport = time.monotonic(), [], ""
         for attempt in range(1, self.max_attempts + 1):
             try:
                 text = self._post(prompt, system)
             except (urllib.error.URLError, TimeoutError, OSError) as e:
+                transport = str(e)
                 raw.append(f"<request failed: {e}>")
                 continue
             raw.append(text)
@@ -68,7 +70,8 @@ class OllamaBackend:
                 continue
             if isinstance(parsed, dict):
                 return Reply(text, parsed, attempt, time.monotonic() - start, raw)
-        return Reply(raw[-1] if raw else "", None, self.max_attempts, time.monotonic() - start, raw)
+        return Reply(raw[-1] if raw else "", None, self.max_attempts, time.monotonic() - start,
+                     raw, transport_error=transport)
 
 
 class ScriptedBackend:

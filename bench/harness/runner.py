@@ -48,6 +48,8 @@ def categorize(recovered: bool, error: str | None, events: list[dict]) -> str:
         return "recovered"
     if error:
         return "crashed"
+    if any(e["type"] == "model_reply" and e.get("transport_error") for e in events):
+        return "backend_unavailable"   # the server was unreachable; not the model's fault
     if any(e["type"] == "model_reply" and not e["parsed"] for e in events):
         return "unparsable_output"
     commands = [e for e in events if e["type"] == "command"]
