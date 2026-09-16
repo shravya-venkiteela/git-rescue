@@ -166,20 +166,29 @@ class RescueAgent:
 
             key = name + json.dumps(params, sort_keys=True, default=str)
             if key in seen_tools:
-                history.append(f"You already called {name} with those parameters. "
-                               f"Try something else, or reply {{\"ready\": true}}.")
+                untried = sorted(set(tools_mod.TOOLS) - {t["tool"] for t in run.investigations})
+                suggestion = f" Not tried yet: {', '.join(untried[:5])}." if untried else ""
+                history.append(f"You already called {name} with those parameters and it gave the "
+                               f"same answer.{suggestion} Or reply {{\"ready\": true}} to plan.")
                 continue
             if used >= self.budget:
                 history.append("No investigation budget left. Give the plan now.")
                 ready = True
                 continue
-            seen_tools.add(key)
-
             output = tools_mod.call(repo, name, params)
-            used += 1
-            run.investigations.append({"tool": name, "params": params, "output": output})
+            #A call that FAILED teaches nothing, so it must not be locked out:
+            #a real run wasted 11 exchanges after `reflog ref=feature` errored
+            #(the branch was deleted) because the repeat guard then refused
+            #every retry, including the corrected one.
+            failed = output.startswith("ERROR:")
+            if not failed:
+                seen_tools.add(key)
+                used += 1
+            if not failed:
+                run.investigations.append({"tool": name, "params": params, "output": output})
             if log is not None:
-                log({"type": "tool_call", "tool": name, "params": params, "output": output})
+                log({"type": "tool_call", "tool": name, "params": params,
+                     "output": output, "failed": failed})
             history.append(f"{name} says:\n{output[:2000]}")
 
         run.gave_up = f"no plan after {self.max_iterations} exchanges"

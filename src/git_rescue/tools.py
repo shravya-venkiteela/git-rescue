@@ -149,7 +149,15 @@ def call(repo: Path, name: str, params: dict) -> str:
     clean = {k: v for k, v in params.items() if k in TOOLS[name].params}
     for key in ("ref", "a", "b"):
         if key in clean and not _valid_ref(repo, str(clean[key])):
-            return f"ERROR: '{clean[key]}' is not a ref this repository knows. Use a value you have seen in output."
+            hint = ""
+            if name == "reflog":
+                #`git branch -D` deletes the branch's own reflog along with
+                #the branch, so HEAD's reflog is the only remaining record
+                #of its commits. This is exactly what the scenario tests.
+                hint = (" A deleted branch has no reflog of its own; its commits are still in "
+                        "HEAD's reflog, so call reflog with ref 'HEAD'.")
+            return (f"ERROR: '{clean[key]}' is not a ref this repository knows."
+                    f" Use a value you have seen in output.{hint}")
     argv = TOOLS[name].build(repo, **clean)
     out = _run(repo, argv)
     return out or "(no output)"

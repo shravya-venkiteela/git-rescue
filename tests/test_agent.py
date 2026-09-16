@@ -247,3 +247,44 @@ def test_an_unanswerable_question_points_the_model_at_the_tools(built):
         plan_reply(f"git branch feature {FEAT2}"),
     ], built, min_investigations=1)
     assert "Look in the repository instead" in backend.calls[1]
+
+
+def test_a_failed_tool_call_can_be_retried_with_different_parameters(built):
+    """A real run called reflog on a DELETED branch, which errors. The repeat
+    guard then refused all 11 retries, including the corrected one, and the
+    run died with no plan. A call that failed teaches nothing, so it must
+    not be remembered as tried."""
+    run, _, _ = investigate("deleted-branch-01", [
+        {"tool": "reflog", "params": {"ref": "feature", "count": 10}},   #fails: branch is gone
+        {"tool": "reflog", "params": {"ref": "HEAD", "count": 10}},      #the correct call
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert run.plan is not None
+    assert len(run.investigations) == 1, "only the successful call should count against the budget"
+
+
+def test_a_failed_call_does_not_spend_the_budget(built):
+    replies = [{"tool": "show", "params": {"ref": f"nosuchref{n}"}} for n in range(1, 6)]
+    run, _, _ = investigate("deleted-branch-01",
+                            replies + [{"tool": "status"}, plan_reply(f"git branch feature {FEAT2}")],
+                            built, budget=2, min_investigations=1)
+    assert run.plan is not None and len(run.investigations) == 1
+
+
+def test_repeating_a_successful_call_is_still_refused_with_a_suggestion(built):
+    run, backend, _ = investigate("deleted-branch-01", [
+        {"tool": "status"},
+        {"tool": "status"},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert len(run.investigations) == 1
+    assert "Not tried yet" in backend.calls[2]
+
+
+def test_reflog_on_a_deleted_branch_says_where_to_look_instead(built):
+    """git branch -D removes the branch's reflog too, so HEAD's is the only
+    record left. The error message has to teach that, or the model is stuck."""
+    from src.git_rescue import tools
+    repo, _ = built(SCENARIOS["deleted-branch-01"])
+    out = tools.call(repo.path, "reflog", {"ref": "feature"})
+    assert out.startswith("ERROR:") and "HEAD's reflog" in out
