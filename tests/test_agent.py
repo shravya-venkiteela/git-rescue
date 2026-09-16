@@ -16,11 +16,17 @@ def plan_reply(command, risk="reversible", **extra):
 
 
 def agent_run(scenario_id, replies, **kwargs):
+    """min_investigations defaults to 0 here: these tests are about planning
+    and execution. The investigate-first rule has its own tests."""
+    kwargs.setdefault("min_investigations", 0)
     backend = ScriptedBackend(replies)
-    return run_scenario(SCENARIOS[scenario_id], RescueAgentSystem(backend, **kwargs)), backend
+    system = RescueAgentSystem(backend, **{k: v for k, v in kwargs.items() if k == "budget"})
+    system.agent.min_investigations = kwargs["min_investigations"]
+    return run_scenario(SCENARIOS[scenario_id], system), backend
 
 
 def investigate(scenario_id, replies, built, **kwargs):
+    kwargs.setdefault("min_investigations", 0)
     repo, labels = built(SCENARIOS[scenario_id])
     backend = ScriptedBackend(replies)
     return RescueAgent(backend, **kwargs).investigate(repo.path, "help"), backend, labels
@@ -171,3 +177,35 @@ def test_an_unreachable_backend_is_not_blamed_on_the_model():
     r = run_scenario(SCENARIOS["deleted-branch-01"], RescueAgentSystem(Dead()))
     assert r.category == "backend_unavailable"
     assert "could not reach the model" in [e for e in r.events if e["type"] == "say"][0]["message"]
+
+
+def test_a_plan_submitted_without_looking_is_refused(built):
+    """A real run: asked for a plan on turn one, the model declared the
+    commits unrecoverable while they sat in the reflog. An agent that does
+    not look is B1 with extra steps."""
+    run, _, _ = investigate("deleted-branch-01", [
+        plan_reply(f"git branch feature {FEAT2}"),          # no investigation yet
+        {"tool": "reflog", "params": {"count": 10}},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert "before investigating" in run.rejected_plans[0]
+    assert run.plan is not None and len(run.investigations) == 1
+
+
+def test_ready_switches_to_the_planning_prompt(built):
+    """Investigation replies are short and cheap; only the final plan pays
+    for the long schema."""
+    run, backend, _ = investigate("deleted-branch-01", [
+        {"tool": "reflog", "params": {"count": 5}},
+        {"ready": True},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert run.plan is not None and len(backend.calls) == 3
+
+
+def test_the_budget_forces_a_plan_even_without_ready(built):
+    run, _, _ = investigate("deleted-branch-01", [
+        {"tool": "status"},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, budget=1, min_investigations=1)
+    assert run.plan is not None and len(run.investigations) == 1

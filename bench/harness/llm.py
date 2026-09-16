@@ -29,10 +29,11 @@ class OllamaBackend:
 
     def __init__(self, model: str = "qwen2.5:7b", url: str = DEFAULT_OLLAMA_URL,
                  num_ctx: int = 8192, temperature: float = 0.0, seed: int = 1,
-                 timeout: int = 180, max_attempts: int = 3):
+                 timeout: int = 180, max_attempts: int = 3, keep_alive: str = "30m"):
         self.model, self.url, self.num_ctx = model, url, num_ctx
         self.temperature, self.seed, self.timeout = temperature, seed, timeout
         self.max_attempts = max_attempts
+        self.keep_alive = keep_alive
 
     @property
     def name(self) -> str:
@@ -41,6 +42,9 @@ class OllamaBackend:
     def _post(self, prompt: str, system: str | None) -> str:
         payload = {
             "model": self.model, "prompt": prompt, "format": "json", "stream": False,
+            # Without this Ollama unloads the model between requests, and
+            # reloading 4.7 GB from disk costs ~8s on every single call.
+            "keep_alive": self.keep_alive,
             "options": {"temperature": self.temperature, "seed": self.seed, "num_ctx": self.num_ctx},
         }
         if system:
