@@ -3,6 +3,7 @@ import pytest
 from bench.baselines.rescue_agent import RescueAgentSystem
 from bench.harness.llm import ScriptedBackend
 from bench.harness.runner import run_scenario
+from bench.harness.simuser import SimulatedUser
 from bench.loader import load_all
 from src.git_rescue.agent import RescueAgent
 
@@ -25,11 +26,16 @@ def agent_run(scenario_id, replies, **kwargs):
     return run_scenario(SCENARIOS[scenario_id], system), backend
 
 
-def investigate(scenario_id, replies, built, **kwargs):
+def investigate(scenario_id, replies, built, ask=None, **kwargs):
+    """ask defaults to the scenario's own simulated user, so question
+    handling is exercised the same way the benchmark exercises it."""
     kwargs.setdefault("min_investigations", 0)
-    repo, labels = built(SCENARIOS[scenario_id])
+    scenario = SCENARIOS[scenario_id]
+    repo, labels = built(scenario)
+    if ask is None:
+        ask = SimulatedUser(scenario.spec.get("clarifications")).answer
     backend = ScriptedBackend(replies)
-    return RescueAgent(backend, **kwargs).investigate(repo.path, "help"), backend, labels
+    return RescueAgent(backend, **kwargs).investigate(repo.path, "help", ask=ask), backend, labels
 
 
 def test_the_agent_investigates_then_recovers():
@@ -184,7 +190,7 @@ def test_a_plan_submitted_without_looking_is_refused(built):
     commits unrecoverable while they sat in the reflog. An agent that does
     not look is B1 with extra steps."""
     run, _, _ = investigate("deleted-branch-01", [
-        plan_reply(f"git branch feature {FEAT2}"),          # no investigation yet
+        plan_reply(f"git branch feature {FEAT2}"),          #no investigation yet
         {"tool": "reflog", "params": {"count": 10}},
         plan_reply(f"git branch feature {FEAT2}"),
     ], built, min_investigations=1)
@@ -209,3 +215,35 @@ def test_the_budget_forces_a_plan_even_without_ready(built):
         plan_reply(f"git branch feature {FEAT2}"),
     ], built, budget=1, min_investigations=1)
     assert run.plan is not None and len(run.investigations) == 1
+
+
+def test_a_repeated_question_is_refused(built):
+    """A real run spent all 20 exchanges asking the same question. Every
+    channel the model has needs a repeat guard, not just tool calls."""
+    run, backend, _ = investigate("deleted-branch-01", [
+        {"ask": "Did you use --force or --delete?"},
+        {"ask": "Did you use --force or --delete?"},
+        {"tool": "reflog", "params": {"count": 10}},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert len(run.questions) == 1 and run.plan is not None
+    assert "already asked" in backend.calls[2]
+
+
+def test_questions_are_budgeted(built):
+    replies = [{"ask": f"question number {n}?"} for n in range(1, 8)]
+    run, backend, _ = investigate("deleted-branch-01",
+                                  replies + [{"tool": "status"}, plan_reply(f"git branch feature {FEAT2}")],
+                                  built, max_questions=2, min_investigations=1)
+    assert len(run.questions) == 2
+    assert "asked enough questions" in backend.calls[3]
+
+
+def test_an_unanswerable_question_points_the_model_at_the_tools(built):
+    """'I don't know' teaches nothing, so the model must be told to look."""
+    run, backend, _ = investigate("deleted-branch-01", [
+        {"ask": "What colour is your terminal?"},          #no clarification matches
+        {"tool": "reflog", "params": {"count": 10}},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert "Look in the repository instead" in backend.calls[1]

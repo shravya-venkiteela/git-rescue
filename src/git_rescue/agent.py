@@ -62,7 +62,8 @@ class RescueAgent:
     """Produces a plan. Execution is someone else's job (executor.execute)."""
 
     def __init__(self, backend, budget: int = 12, max_plan_retries: int = 2,
-                 max_iterations: int | None = None, min_investigations: int = 1):
+                 max_iterations: int | None = None, min_investigations: int = 1,
+                 max_questions: int = 3):
         self.backend = backend
         self.budget = budget
         self.max_plan_retries = max_plan_retries
@@ -73,11 +74,14 @@ class RescueAgent:
         #diagnosis ("the commits are unrecoverable") while they sat in the
         #reflog. An agent that does not look is just B1 with extra steps.
         self.min_investigations = min_investigations
+        #Questions need a budget for the same reason tools do.
+        self.max_questions = max_questions
 
     def investigate(self, repo, user_message: str, ask=None, log=None) -> AgentRun:
         run = AgentRun()
         history = [f"The user says: {user_message}"]
         used, seen_tools, retries, ready = 0, set(), 0, False
+        asked: dict[str, str] = {}
 
         for iteration in range(self.max_iterations):
             planning = used >= self.budget or ready
@@ -135,9 +139,23 @@ class RescueAgent:
                 return run
 
             if "ask" in reply.parsed and ask is not None:
-                question = str(reply.parsed["ask"])
+                question = str(reply.parsed["ask"]).strip()
+                if question in asked:
+                    history.append(f"You already asked that. The answer was still: "
+                                   f"{asked[question]}\nUse a tool instead.")
+                    continue
+                if len(asked) >= self.max_questions:
+                    history.append("You have asked enough questions. The repository itself "
+                                   "has the answers: use the tools.")
+                    continue
+                answer = ask(question)
+                asked[question] = answer
                 run.questions.append(question)
-                history.append(f"You asked: {question}\nThe user replied: {ask(question)}")
+                history.append(f"You asked: {question}\nThe user replied: {answer}")
+                #An answer that teaches nothing must not invite the same
+                #question again in different words.
+                if "don't know" in answer.lower():
+                    history.append("The user cannot answer that. Look in the repository instead.")
                 continue
 
             name = str(reply.parsed.get("tool", "")).strip()
