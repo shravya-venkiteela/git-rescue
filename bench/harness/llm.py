@@ -78,6 +78,152 @@ class OllamaBackend:
                      raw, transport_error=transport)
 
 
+class OpenAICompatibleBackend:
+    """Any endpoint that speaks the OpenAI chat-completions format.
+
+    Gemini, Groq, OpenRouter and Cerebras all do, so one class covers every
+    hosted option: only base_url, model and the API key change. Uses urllib,
+    like OllamaBackend, so no SDK dependency is added.
+    """
+
+    def __init__(self, model: str, base_url: str, api_key: str,
+                 temperature: float = 0.0, seed: int = 1,
+                 timeout: int = 120, max_attempts: int = 3):
+        self.model = model
+        self.url = base_url.rstrip("/") + "/chat/completions"
+        self.api_key = api_key
+        self.temperature, self.seed, self.timeout = temperature, seed, timeout
+        self.max_attempts = max_attempts
+
+    @property
+    def name(self) -> str:
+        return f"{self.url.split('/')[2]}/{self.model}"
+
+    def _post(self, prompt: str, system: str | None, json_mode: bool = True) -> str:
+        messages = ([{"role": "system", "content": system}] if system else []) + \
+                   [{"role": "user", "content": prompt}]
+        payload = {
+            "model": self.model, "messages": messages,
+            # The hosted equivalent of Ollama's format:json. A reply that is
+            # still not parseable is retried and then counted, never fixed up.
+            "temperature": self.temperature,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        # Not every provider accepts seed: Gemini rejects the whole request
+        # with HTTP 400 ("Unknown name seed"). So it is only sent when set.
+        if self.seed is not None:
+            payload["seed"] = self.seed
+        request = urllib.request.Request(
+            self.url, data=json.dumps(payload).encode(),
+            # Groq sits behind Cloudflare, which answers 403 "error code: 1010"
+            # to Python's default "Python-urllib/3.x" User-Agent.
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}",
+                     "User-Agent": "git-rescue-bench/0.1", "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            body = json.loads(response.read().decode())
+        return body["choices"][0]["message"]["content"] or ""
+
+    def json_reply(self, prompt: str, system: str | None = None) -> Reply:
+        start, raw, transport, json_mode = time.monotonic(), [], "", True
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                text = self._post(prompt, system, json_mode=json_mode)
+            except urllib.error.HTTPError as e:
+                body = e.read().decode("utf-8", "replace")
+                if e.code == 400 and "json_validate_failed" in body:
+                    # Groq's JSON mode rejects the whole reply when the model's
+                    # output is not valid JSON. That is the model failing, not
+                    # the service: count it as unparsed output and try again
+                    # without JSON mode, parsing the plain reply instead.
+                    raw.append(f"<provider rejected non-JSON output: {body[:300]}>")
+                    json_mode = False
+                    continue
+                # Kept long: quota errors name WHICH limit (per-minute or
+                # per-day) only near the end, and 300 chars cut that off.
+                detail = body[:3000]
+                # 429 is a free-tier rate limit, not a bad model: report it as a
+                # transport problem so a sweep is never misread as model failure.
+                transport = f"HTTP {e.code}: {detail}"
+                raw.append(f"<request failed: {transport}>")
+                # 429 (rate limit) and 503 (provider overloaded) are both
+                # temporary: wait and retry rather than failing the run.
+                if e.code in (429, 503) and attempt < self.max_attempts:
+                    time.sleep(min(30, 10 * attempt))
+                continue
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                transport = str(e)
+                raw.append(f"<request failed: {e}>")
+                continue
+            raw.append(text)
+            parsed = _loads_object(text)
+            if parsed is not None:
+                return Reply(text, parsed, attempt, time.monotonic() - start, raw)
+        return Reply(raw[-1] if raw else "", None, self.max_attempts, time.monotonic() - start,
+                     raw, transport_error=transport)
+
+
+def _loads_object(text: str) -> dict | None:
+    """Parse a JSON object, tolerating prose or code fences around it (what a
+    model tends to add once JSON mode is off). Anything else is unparsed."""
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        first, last = text.find("{"), text.rfind("}")
+        if first < 0 or last <= first:
+            return None
+        try:
+            value = json.loads(text[first:last + 1])
+        except json.JSONDecodeError:
+            return None
+    return value if isinstance(value, dict) else None
+
+
+# provider -> (base_url, environment variable holding the key, default model)
+PRESETS = {
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai/", "GEMINI_API_KEY", "gemini-3.6-flash"),  # 2.5 is closed to new keys
+    "groq": ("https://api.groq.com/openai/v1/", "GROQ_API_KEY", "openai/gpt-oss-120b"),  # llama-3.3-70b retired
+    "openrouter": ("https://openrouter.ai/api/v1/", "OPENROUTER_API_KEY", "meta-llama/llama-3.3-70b-instruct:free"),
+}
+
+
+def build_backend(provider: str, model: str | None = None, num_ctx: int = 8192, seed: int = 1):
+    """'ollama' or a key of PRESETS. Keys come from the environment, never code."""
+    import os
+
+    if provider == "ollama":
+        return OllamaBackend(model=model or "qwen2.5:7b", num_ctx=num_ctx, seed=seed)
+    if provider not in PRESETS:
+        raise ValueError(f"unknown provider '{provider}'. Known: ollama, {', '.join(PRESETS)}")
+    base_url, env_var, default_model = PRESETS[provider]
+    key = os.environ.get(env_var, "").strip()
+    if not key:
+        raise SystemExit(f"{env_var} is not set. Create a key, then: $env:{env_var} = \"...\"")
+    # Gemini's OpenAI-compatible endpoint rejects `seed` (HTTP 400).
+    return OpenAICompatibleBackend(model or default_model, base_url, key,
+                                   seed=None if provider == "gemini" else seed)
+
+
+def list_models(provider: str) -> list[str]:
+    """Ask a hosted provider which models this key can use. Model names are
+    retired often (gemini-2.5-flash and llama-3.3-70b-versatile both vanished
+    while this benchmark was being built), so check instead of guessing."""
+    import os
+
+    base_url, env_var, _ = PRESETS[provider]
+    key = os.environ.get(env_var, "").strip()
+    if not key:
+        raise SystemExit(f"{env_var} is not set.")
+    request = urllib.request.Request(
+        base_url.rstrip("/") + "/models",
+        headers={"Authorization": f"Bearer {key}", "User-Agent": "git-rescue-bench/0.1"},
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        body = json.loads(response.read().decode())
+    return sorted(m.get("id", "") for m in body.get("data", []))
+
+
 class ScriptedBackend:
     """Returns canned replies. For testing the harness without a model."""
 
@@ -92,3 +238,11 @@ class ScriptedBackend:
             return Reply(item, None, 1, 0.0, [item])
         text = json.dumps(item)
         return Reply(text, item, 1, 0.0, [text])
+
+
+if __name__ == "__main__":
+    # uv run python -m bench.harness.llm groq     -> list models this key can use
+    import sys
+
+    for name in list_models(sys.argv[1] if len(sys.argv) > 1 else "groq"):
+        print(name)

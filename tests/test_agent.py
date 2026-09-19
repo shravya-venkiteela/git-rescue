@@ -288,3 +288,42 @@ def test_reflog_on_a_deleted_branch_says_where_to_look_instead(built):
     repo, _ = built(SCENARIOS["deleted-branch-01"])
     out = tools.call(repo.path, "reflog", {"ref": "feature"})
     assert out.startswith("ERROR:") and "HEAD's reflog" in out
+
+
+def test_a_bare_plan_is_accepted_as_a_plan(built):
+    """The planning prompt shows the schema without a {"plan": ...} wrapper.
+    Gemini followed it exactly and its correct plan was ignored 12 times."""
+    bare = plan_reply(f"git branch feature {FEAT2}")["plan"]
+    run, _, _ = investigate("deleted-branch-01", [
+        {"tool": "reflog", "params": {"ref": "HEAD", "count": 10}},
+        {"ready": True},
+        bare,
+    ], built, min_investigations=1)
+    assert run.plan is not None and "feature" in run.plan.steps[0].text
+
+
+def test_a_bare_plan_still_has_to_follow_the_rules(built):
+    """Unwrapping must not bypass validation: placeholders are still refused."""
+    bare = plan_reply("git branch feature <sha>")["plan"]
+    run, _, _ = investigate("deleted-branch-01", [
+        {"tool": "reflog", "params": {"ref": "HEAD"}}, bare, bare, bare, bare,
+    ], built, min_investigations=1)
+    assert run.plan is None and any("placeholder" in r for r in run.rejected_plans)
+
+
+def test_a_tool_named_as_the_key_is_accepted(built):
+    """gpt-oss replied {"reflog": {...}} on its first turn."""
+    run, _, _ = investigate("deleted-branch-01", [
+        {"reflog": {"ref": "HEAD", "count": 10}},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert run.plan is not None and run.investigations[0]["tool"] == "reflog"
+
+
+def test_an_unknown_single_key_is_not_mistaken_for_a_tool(built):
+    run, _, _ = investigate("deleted-branch-01", [
+        {"delete_everything": {}},
+        {"tool": "status"},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert [i["tool"] for i in run.investigations] == ["status"]

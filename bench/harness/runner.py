@@ -188,11 +188,11 @@ def build_system(name: str, args):
     from bench.baselines.rescue_agent import RescueAgentSystem
     from bench.baselines.unrestricted_shell import UnrestrictedShellSystem
     from bench.harness.fake_systems import SYSTEMS
-    from bench.harness.llm import OllamaBackend
+    from bench.harness.llm import build_backend
 
     if name in SYSTEMS:
         return SYSTEMS[name]()
-    backend = OllamaBackend(model=args.model, num_ctx=args.num_ctx, seed=args.seed)
+    backend = build_backend(args.provider, args.model, num_ctx=args.num_ctx, seed=args.seed)
     if name == "unrestricted_shell":
         return UnrestrictedShellSystem(backend, max_turns=args.max_turns)
     if name == "rescue_agent":
@@ -209,7 +209,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--system", action="append", required=True, choices=ALL_SYSTEMS)
     parser.add_argument("--scenario", action="append", help="scenario id (default: all)")
     parser.add_argument("--repeats", type=int, default=1)
-    parser.add_argument("--model", default="qwen2.5:7b", help="Ollama model for model-backed systems")
+    parser.add_argument("--provider", default="ollama", choices=["ollama", "gemini", "groq", "openrouter"],
+                        help="where model-backed systems get their model")
+    parser.add_argument("--model", default=None, help="model name (default depends on --provider)")
     parser.add_argument("--num-ctx", type=int, default=8192)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max-turns", type=int, default=15, help="turn budget for unrestricted_shell")
@@ -227,11 +229,11 @@ def main(argv: list[str] | None = None) -> None:
                 status = "RECOVERED" if r.recovered else "failed"
                 print(f"{system_name:12} {scenario.id:28} {status:9} loss={r.practical_loss} {r.seconds}s")
 
-    uses_model = any(s.startswith("description_only") for s in args.system)
-    model_tag = ("-" + args.model.replace(":", "").replace("/", "")) if uses_model else ""
-    uses_model = any(s.startswith("description_only") for s in args.system)
-    model_tag = ("-" + args.model.replace(":", "").replace("/", "")) if uses_model else ""
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + "-".join(args.system) + model_tag + model_tag
+    uses_model = any(s in MODEL_SYSTEMS for s in args.system)
+    from bench.harness.llm import PRESETS
+    model_label = args.model or (PRESETS[args.provider][2] if args.provider in PRESETS else "qwen2.5:7b")
+    model_tag = ("-" + args.provider + "-" + model_label.replace(":", "").replace("/", "")) if uses_model else ""
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + "-".join(args.system) + model_tag
     out_dir = RESULTS_DIR / run_id
     save(results, out_dir)
     print()

@@ -108,6 +108,13 @@ class RescueAgent:
                 ready = True
                 continue
 
+            # The planning prompt shows the plan schema bare, so a model that
+            # follows it exactly replies with the plan object itself rather
+            # than {"plan": {...}}. Both shapes are a plan. Before this, Gemini
+            # gave the correct fix 12 times in a row and every one was ignored.
+            if "plan" not in reply.parsed and ("diagnosis" in reply.parsed or "steps" in reply.parsed):
+                reply.parsed = {"plan": reply.parsed}
+
             if "plan" in reply.parsed:
                 if used < self.min_investigations:
                     #Looking is not optional: a plan made without evidence is
@@ -157,6 +164,15 @@ class RescueAgent:
                 if "don't know" in answer.lower():
                     history.append("The user cannot answer that. Look in the repository instead.")
                 continue
+
+            # {"reflog": {"ref": "HEAD"}} names the tool as the key instead of
+            # {"tool": "reflog", "params": {...}}. gpt-oss did this on its first
+            # turn; it is unambiguous when the only key is a real tool name.
+            if "tool" not in reply.parsed and len(reply.parsed) == 1:
+                only = next(iter(reply.parsed))
+                if only in tools_mod.TOOLS:
+                    value = reply.parsed[only]
+                    reply.parsed = {"tool": only, "params": value if isinstance(value, dict) else {}}
 
             name = str(reply.parsed.get("tool", "")).strip()
             params = reply.parsed.get("params") or {}
