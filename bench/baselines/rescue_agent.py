@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from git_rescue.plan import split_command
 from src.git_rescue import executor
 from src.git_rescue.agent import RescueAgent
 
@@ -52,7 +54,7 @@ class RescueAgentSystem:
         #The runner counts commands from Session events, and the executor runs
         #its own subprocesses, so mirror each executed step into the log.
         for step in (outcome.steps if outcome.ok or outcome.backup else []):
-            session.events.append({"type": "command", "argv": step.command.split(),
+            session.events.append({"type": "command", "argv": split_command(step.command),
                                    "returncode": step.returncode, "stdout": "", "stderr": step.output,
                                    "seconds": 0.0, "blocked": None})
 

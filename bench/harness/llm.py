@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import json
 import time
 import urllib.error
@@ -99,6 +101,32 @@ class OpenAICompatibleBackend:
     def name(self) -> str:
         return f"{self.url.split('/')[2]}/{self.model}"
 
+    # Free tiers limit tokens per minute. Groq's 429 says exactly how long to
+    # wait ("try again in 2.11s"); the old fixed 10 s back-off with 3 tries
+    # gave up on limits that clear in seconds, and two scenarios were lost to it.
+    max_rate_limit_waits = 6
+    longest_rate_limit_wait = 120.0   # longer than this is a daily quota: give up
+
+    def _post_patiently(self, prompt: str, system: str | None, json_mode: bool = True) -> str:
+        """_post, but a 429 is waited out (as the provider asks) and retried
+        without using up one of json_reply's attempts."""
+        waits = 0
+        while True:
+            try:
+                return self._post(prompt, system, json_mode=json_mode)
+            except urllib.error.HTTPError as e:
+                if e.code != 429 or waits >= self.max_rate_limit_waits:
+                    raise
+                body = e.read()
+                e.read = lambda b=body: b          # json_reply may still need it
+                delay = rate_limit_delay(body.decode("utf-8", "replace"),
+                                         e.headers.get("Retry-After") if e.headers else None,
+                                         waits + 1)
+                if delay > self.longest_rate_limit_wait:
+                    raise
+                waits += 1
+                time.sleep(delay)
+
     def _post(self, prompt: str, system: str | None, json_mode: bool = True) -> str:
         messages = ([{"role": "system", "content": system}] if system else []) + \
                    [{"role": "user", "content": prompt}]
@@ -129,10 +157,10 @@ class OpenAICompatibleBackend:
         start, raw, transport, json_mode = time.monotonic(), [], "", True
         for attempt in range(1, self.max_attempts + 1):
             try:
-                text = self._post(prompt, system, json_mode=json_mode)
+                text = self._post_patiently(prompt, system, json_mode=json_mode)
             except urllib.error.HTTPError as e:
                 body = e.read().decode("utf-8", "replace")
-                if e.code == 400 and "json_validate_failed" in body:
+                if e.code == 400 and ("json_validate_failed" in body or "tool_use_failed" in body):
                     # Groq's JSON mode rejects the whole reply when the model's
                     # output is not valid JSON. That is the model failing, not
                     # the service: count it as unparsed output and try again
@@ -246,3 +274,21 @@ if __name__ == "__main__":
 
     for name in list_models(sys.argv[1] if len(sys.argv) > 1 else "groq"):
         print(name)
+
+
+_RETRY_IN = re.compile(r"(?:try again|retry) in\s+(?:(\d+)m(?!s))?\s*([\d.]+)\s*(ms|s)\b", re.I)
+
+
+def rate_limit_delay(body: str, retry_after: str | None, attempt: int) -> float:
+    """Seconds to wait after a 429: the provider's own hint when it gives one
+    (Groq: "try again in 1m2.5s" / "345ms"; or a Retry-After header), plus a
+    half-second margin; otherwise exponential back-off from 5 s."""
+    m = _RETRY_IN.search(body)
+    if m:
+        value = float(m.group(2))
+        seconds = int(m.group(1) or 0) * 60 + (value / 1000 if m.group(3).lower() == "ms" else value)
+        return seconds + 0.5
+    try:
+        return float(retry_after) + 0.5
+    except (TypeError, ValueError):
+        return min(60.0, 5.0 * 2 ** (attempt - 1))

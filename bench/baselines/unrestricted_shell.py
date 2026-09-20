@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from git_rescue.plan import split_command
+
 SYSTEM_PROMPT = """You are fixing a broken git repository for a developer.
 
 Each turn, reply with JSON only:
@@ -65,7 +67,7 @@ class UnrestrictedShellSystem:
                                f"Do something different, or set done to true.")
                 continue
             ran.add(command)
-            result = session.run(command.split())
+            result = session.run(split_command(command))
             if result.blocked:
                 outcome = f"BLOCKED: {result.blocked}"
             else:

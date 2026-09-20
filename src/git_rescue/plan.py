@@ -1,8 +1,21 @@
 from __future__ import annotations
+
+import shlex
 import json
 from dataclasses import dataclass, field
 
 RISKS = ("safe", "reversible", "destructive")
+
+
+def split_command(command: str) -> list[str]:
+    """Split a command line the way a shell would, so quoted arguments stay
+    whole:  git stash push -m "recovered stash"  ->  [..., "-m", "recovered stash"].
+    str.split() broke these into stray pathspecs. Unbalanced quotes fall back
+    to whitespace splitting, so the command still runs and fails honestly."""
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return command.split()
 
 
 @dataclass
@@ -55,7 +68,7 @@ def parse(data: dict) -> Plan:
         if not isinstance(raw_step, dict):
             raise PlanError(f"step {i} must be an object with command, purpose and risk")
         command = raw_step.get("command")
-        argv = command.split() if isinstance(command, str) else list(command or [])
+        argv = split_command(command) if isinstance(command, str) else list(command or [])
         if not argv:
             raise PlanError(f"step {i} has no command")
         if argv[0] != "git":

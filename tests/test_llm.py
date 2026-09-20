@@ -70,7 +70,9 @@ def test_a_rate_limit_is_a_transport_error_not_a_bad_model(monkeypatch):
     scored as the model producing garbage."""
     monkeypatch.setattr("bench.harness.llm.time.sleep", lambda s: None)
     server, _ = serve([(429, {"error": {"message": "quota exceeded"}})] * 3)
-    reply = backend_for(server).json_reply("x")
+    backend = backend_for(server)
+    backend.max_rate_limit_waits = 0
+    reply = backend.json_reply("x")
     assert reply.parsed is None and "429" in reply.transport_error
 
 
@@ -165,3 +167,52 @@ def test_other_400s_are_still_transport_errors():
 def test_lenient_object_parsing(text, expected):
     from bench.harness.llm import _loads_object
     assert _loads_object(text) == expected
+
+
+def test_a_rate_limit_waits_as_long_as_the_provider_says(monkeypatch):
+    """Groq's TPM 429 says how long to wait. Waiting it out must not use up
+    an attempt, and must not end the run."""
+    slept = []
+    monkeypatch.setattr("bench.harness.llm.time.sleep", slept.append)
+    limit = {"error": {"message": "Rate limit reached on tokens per minute (TPM): Limit 8000, "
+                                  "Used 7146, Requested 1136. Please try again in 2.114999999s."}}
+    server, _ = serve([(429, limit), (429, limit), (200, completion('{"ready": true}'))])
+    reply = backend_for(server).json_reply("x")
+    assert reply.parsed == {"ready": True} and reply.attempts == 1 and reply.transport_error == ""
+    assert slept == [pytest.approx(2.615), pytest.approx(2.615)]
+
+
+def test_a_daily_quota_is_not_waited_out(monkeypatch):
+    slept = []
+    monkeypatch.setattr("bench.harness.llm.time.sleep", slept.append)
+    daily = {"error": {"message": "tokens per day (TPD) limit. Please try again in 7m12s."}}
+    server, _ = serve([(429, daily)] * 3)
+    reply = backend_for(server).json_reply("x")
+    assert "429" in reply.transport_error and all(s <= 30 for s in slept)
+
+
+@pytest.mark.parametrize("body,header,expected", [
+    ("Please try again in 2.114999999s.", None, 2.615),
+    ("Please try again in 345ms.", None, 0.845),
+    ("Please try again in 1m2.5s.", None, 63.0),
+    ("Please retry in 17.3s.", None, 17.8),
+    ("quota exceeded", "4", 4.5),
+    ("quota exceeded", None, 5.0),
+])
+def test_rate_limit_delay(body, header, expected):
+    from bench.harness.llm import rate_limit_delay
+    assert rate_limit_delay(body, header, 1) == pytest.approx(expected)
+
+
+def test_a_tool_call_rejection_is_bad_output_not_an_outage():
+    """gpt-oss sometimes emits a tool call; Groq answers 400 tool_use_failed.
+    That is the model's failure, so it is retried and never a transport error."""
+    rejected = {"error": {"message": "Tool choice is none, but model called a tool",
+                          "code": "tool_use_failed"}}
+    server, _ = serve([(400, rejected), (200, completion('{"ready": true}'))])
+    reply = backend_for(server).json_reply("x")
+    assert reply.parsed == {"ready": True} and "rejected" in reply.raw_attempts[0]
+
+    server, _ = serve([(400, rejected)] * 3)
+    reply = backend_for(server).json_reply("x")
+    assert reply.parsed is None and reply.transport_error == ""
