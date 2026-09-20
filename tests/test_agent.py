@@ -327,3 +327,45 @@ def test_an_unknown_single_key_is_not_mistaken_for_a_tool(built):
         plan_reply(f"git branch feature {FEAT2}"),
     ], built, min_investigations=1)
     assert [i["tool"] for i in run.investigations] == ["status"]
+
+
+def test_a_plan_that_fails_on_the_copy_gets_one_corrected_retry():
+    """The shadow run's error is fed back. A real run lost dropped-stash by
+    choosing the wrong dangling commit; the error said exactly that."""
+    r, backend = agent_run("deleted-branch-01", [
+        plan_reply("git branch -d no-such-branch"),
+        plan_reply(f"git branch feature {FEAT2}"),
+    ])
+    assert r.recovered and r.practical_loss == 0
+    assert "COPY" in backend.calls[1] and "no-such-branch" in backend.calls[1]
+
+
+def test_replanning_is_capped():
+    r, backend = agent_run("deleted-branch-01", [
+        plan_reply("git branch -d no-such-branch"),
+        plan_reply("git branch -d still-not-a-branch"),
+        plan_reply(f"git branch feature {FEAT2}"),
+    ])
+    assert not r.recovered and len(backend.calls) == 2
+
+
+def test_a_blocked_step_is_fed_back_and_can_be_dropped():
+    """gpt-oss added "reflog expire ... gc --prune=now" as optional clean-up."""
+    r, backend = agent_run("deleted-branch-01", [
+        {"plan": {"diagnosis": "d", "confidence": "high", "steps": [
+            {"command": f"git branch feature {FEAT2}", "purpose": "p", "risk": "reversible"},
+            {"command": "git gc --prune=now", "purpose": "tidy up", "risk": "safe"}]}},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ])
+    assert r.recovered and "gc" in backend.calls[1]
+
+
+def test_ready_before_looking_is_refused_without_wasting_a_plan(built):
+    run, backend, _ = investigate("deleted-branch-01", [
+        {"ready": True},
+        {"tool": "reflog", "params": {"ref": "HEAD", "count": 10}},
+        {"ready": True},
+        plan_reply(f"git branch feature {FEAT2}"),
+    ], built, min_investigations=1)
+    assert run.plan is not None and run.rejected_plans == []
+    assert "not looked" in backend.calls[1]

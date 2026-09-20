@@ -6,6 +6,11 @@ from dataclasses import dataclass, field
 
 RISKS = ("safe", "reversible", "destructive")
 
+#Steps run as argument lists, not through a shell, so these would reach git
+#as literal arguments. A plan chaining "reflog expire && gc" failed only by
+#accident; it must be rejected on purpose, with a reason.
+SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<", "&", "2>&1"}
+
 
 def split_command(command: str) -> list[str]:
     """Split a command line the way a shell would, so quoted arguments stay
@@ -26,7 +31,7 @@ class Step:
 
     @property
     def text(self) -> str:
-        return " ".join(self.argv)
+        return shlex.join(self.argv)
 
 
 @dataclass
@@ -73,6 +78,10 @@ def parse(data: dict) -> Plan:
             raise PlanError(f"step {i} has no command")
         if argv[0] != "git":
             raise PlanError(f"step {i}: every command must start with 'git', got '{argv[0]}'")
+        operators = [p for p in argv if p in SHELL_OPERATORS or p.endswith(";")]
+        if operators:
+            raise PlanError(f"step {i}: '{' '.join(argv)}' uses {operators[0]!r}. Commands run "
+                            "without a shell: put each git command in its own step.")
         if any(part.startswith("<") or part.startswith("{") for part in argv):
             raise PlanError(f"step {i}: '{' '.join(argv)}' contains a placeholder. "
                             "Use a literal value you saw in tool output.")

@@ -22,8 +22,14 @@ from src.git_rescue.risk import BLOCKED, DESTRUCTIVE, REVERSIBLE, SAFE, classify
     ("git branch -D feature", DESTRUCTIVE),
     ("git stash drop", DESTRUCTIVE),
     ("git stash pop", DESTRUCTIVE),               # removes the stash entry
-    ("git gc --prune=now", DESTRUCTIVE),
-    ("git reflog expire --expire=now --all", DESTRUCTIVE),
+    # erasing the reflog or pruning objects deletes what recovery reads
+    ("git gc --prune=now", BLOCKED),
+    ("git gc", BLOCKED),
+    ("git prune", BLOCKED),
+    ("git reflog expire --expire=now --all", BLOCKED),
+    ("git reflog delete HEAD@{1}", BLOCKED),
+    ("git reflog show HEAD", SAFE),
+    ("git reflog", SAFE),
     ("git checkout abc123 -- app.py", DESTRUCTIVE),
     ("git restore --staged app.py", DESTRUCTIVE),
     ("git rebase --abort", DESTRUCTIVE),          # discards in-progress work

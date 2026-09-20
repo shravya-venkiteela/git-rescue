@@ -151,7 +151,16 @@ class OpenAICompatibleBackend:
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             body = json.loads(response.read().decode())
-        return body["choices"][0]["message"]["content"] or ""
+        choice = body["choices"][0]
+        content = choice["message"].get("content") or ""
+        if not content.strip():
+            #gpt-oss returned empty content in 3 of 9 runs. Record why (e.g.
+            #finish_reason "length" when reasoning used every token), so the
+            #transcript shows the cause instead of a blank.
+            reasoning = choice["message"].get("reasoning") or ""
+            self.last_empty = (f"<empty reply: finish_reason={choice.get('finish_reason')}, "
+                               f"reasoning_chars={len(reasoning)}>")
+        return content
 
     def json_reply(self, prompt: str, system: str | None = None) -> Reply:
         start, raw, transport, json_mode = time.monotonic(), [], "", True
@@ -165,7 +174,7 @@ class OpenAICompatibleBackend:
                     # output is not valid JSON. That is the model failing, not
                     # the service: count it as unparsed output and try again
                     # without JSON mode, parsing the plain reply instead.
-                    raw.append(f"<provider rejected non-JSON output: {body[:300]}>")
+                    raw.append(f"<provider rejected the reply: {body[:300]}>")
                     json_mode = False
                     continue
                 # Kept long: quota errors name WHICH limit (per-minute or
@@ -183,6 +192,9 @@ class OpenAICompatibleBackend:
             except (urllib.error.URLError, TimeoutError, OSError) as e:
                 transport = str(e)
                 raw.append(f"<request failed: {e}>")
+                continue
+            if not text.strip():
+                raw.append(getattr(self, "last_empty", "<empty reply>"))
                 continue
             raw.append(text)
             parsed = _loads_object(text)

@@ -216,3 +216,13 @@ def test_a_tool_call_rejection_is_bad_output_not_an_outage():
     server, _ = serve([(400, rejected)] * 3)
     reply = backend_for(server).json_reply("x")
     assert reply.parsed is None and reply.transport_error == ""
+
+
+def test_an_empty_reply_records_why():
+    """gpt-oss sometimes returns empty content. The transcript must say why."""
+    empty = {"choices": [{"finish_reason": "length",
+                          "message": {"role": "assistant", "content": "", "reasoning": "x" * 50}}]}
+    server, _ = serve([(200, empty)] * 3)
+    reply = backend_for(server).json_reply("x")
+    assert reply.parsed is None and reply.transport_error == ""
+    assert "finish_reason=length" in reply.text and "reasoning_chars=50" in reply.text

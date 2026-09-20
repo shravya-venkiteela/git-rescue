@@ -27,6 +27,16 @@ BLOCKED_SUBCOMMANDS = {"config", "submodule", "daemon", "credential", "difftool"
 BLOCKED_GLOBAL = {"-c", "-C", "--git-dir", "--work-tree", "--exec-path", "--namespace", "--config-env"}
 GLOBAL_WITH_VALUE = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 
+#A rescue never needs these, and each one deletes the only copy of lost work:
+#the reflog and unreachable objects are exactly what recovery reads. gpt-oss
+#appended "git reflog expire --expire=now --all && git gc --prune=now" as an
+#optional clean-up to a correct plan. (subcommand, flags); None = always.
+BLOCKED_RULES: dict[str, set[str] | None] = {
+    "gc": None,
+    "prune": None,
+    "reflog": {"expire", "delete"},
+}
+
 #(subcommand, flags that make it destructive). None means always destructive.
 DESTRUCTIVE_RULES: dict[str, set[str] | None] = {
     "reset": {"--hard", "--merge", "--keep"},
@@ -77,6 +87,11 @@ def classify(argv: list[str]) -> tuple[str, str]:
     if sub == "bisect":
         return (BLOCKED, "bisect run executes arbitrary commands") if rest[:1] == ["run"] \
             else (REVERSIBLE, "bisect moves HEAD")
+
+    block = BLOCKED_RULES.get(sub, "missing")
+    if block is None or (block != "missing" and set(rest[:1]) & block):
+        return BLOCKED, (f"git {' '.join([sub] + rest[:1]) if block else sub} deletes the reflog "
+                         "or unreachable objects, which is what recovery depends on")
 
     rule = DESTRUCTIVE_RULES.get(sub, "missing")
     if rule is None:

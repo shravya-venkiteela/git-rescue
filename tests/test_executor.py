@@ -134,3 +134,18 @@ def test_the_undo_safety_copy_is_stored_beside_the_original(built):
     saved = backup_mod.create(repo.path, root=root)
     backup_mod.restore(saved, repo.path)
     assert len(list((root / saved.path.parent.name).iterdir())) == 2
+
+
+def test_outcome_says_whether_the_real_repository_was_touched(built):
+    """The agent may only retry a plan that never touched the real repo."""
+    from bench.loader import load_all
+    from src.git_rescue.executor import execute
+    from src.git_rescue.plan import parse
+    scenario = {s.id: s for s in load_all()}["deleted-branch-01"]
+    repo, labels = built(scenario)
+    def plan(cmd):
+        return parse({"diagnosis": "d", "confidence": "high",
+                      "steps": [{"command": cmd, "purpose": "p", "risk": "reversible"}]})
+    assert not execute(repo.path, plan("git branch -d no-such-branch")).ran_for_real
+    assert not execute(repo.path, plan("git gc")).ran_for_real
+    assert execute(repo.path, plan(f"git branch feature {labels['feat2']}")).ran_for_real

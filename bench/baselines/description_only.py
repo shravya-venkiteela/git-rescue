@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from git_rescue.plan import split_command
+from src.git_rescue.plan import split_command
 
 SYSTEM_PROMPT = """You are helping a developer recover from a git problem.
 You cannot see their repository. You cannot run commands to inspect it.

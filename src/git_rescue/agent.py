@@ -34,7 +34,12 @@ Rules:
   recovered by any command, and saying so is the correct answer; claiming
   to recover it is a lie.
 - Mark each step safe, reversible or destructive. Your label is recorded, but
-  a separate table decides what actually happens, so be honest."""
+  a separate table decides what actually happens, so be honest.
+- Only the steps that recover the work. No clean-up: do not delete branches
+  or stashes you create, and never expire the reflog, gc or prune; those
+  delete the only copies of lost work.
+- One git command per step. Steps run without a shell, so &&, ;, | and >
+  do not work."""
 
 
 @dataclass
@@ -44,6 +49,12 @@ class AgentRun:
     questions: list[str] = field(default_factory=list)
     rejected_plans: list[str] = field(default_factory=list)
     gave_up: str = ""
+    #Kept so a run can be resumed with feedback (see RescueAgent.investigate).
+    history: list[str] = field(default_factory=list)
+    used: int = 0
+    seen_tools: set = field(default_factory=set)
+    asked: dict = field(default_factory=dict)
+    replans: int = 0
 
 
 def _investigate_prompt() -> str:
@@ -77,11 +88,21 @@ class RescueAgent:
         #Questions need a budget for the same reason tools do.
         self.max_questions = max_questions
 
-    def investigate(self, repo, user_message: str, ask=None, log=None) -> AgentRun:
-        run = AgentRun()
-        history = [f"The user says: {user_message}"]
-        used, seen_tools, retries, ready = 0, set(), 0, False
-        asked: dict[str, str] = {}
+    def investigate(self, repo, user_message: str, ask=None, log=None,
+                    resume: AgentRun | None = None, feedback: str = "") -> AgentRun:
+        """Investigate and return a plan. With `resume`, continue that run
+        (same history, budget and seen tools) after `feedback`, e.g. the
+        error from trying its plan on a copy of the repository."""
+        if resume is None:
+            run = AgentRun(history=[f"The user says: {user_message}"])
+            ready = False
+        else:
+            run = resume
+            run.plan, run.gave_up, run.replans = None, "", run.replans + 1
+            run.history.append(feedback)
+            ready = True
+        history, seen_tools, asked = run.history, run.seen_tools, run.asked
+        used, retries = run.used, 0
 
         for iteration in range(self.max_iterations):
             planning = used >= self.budget or ready
@@ -105,6 +126,12 @@ class RescueAgent:
                 return run
 
             if reply.parsed.get("ready"):
+                if used < self.min_investigations:
+                    #Saying "ready" without looking led straight to a plan that
+                    #was then rejected for the same reason, twice, in one run.
+                    history.append("You have not looked at the repository yet. Call a tool "
+                                   "first, starting with operation_state.")
+                    continue
                 ready = True
                 continue
 
@@ -200,6 +227,7 @@ class RescueAgent:
             if not failed:
                 seen_tools.add(key)
                 used += 1
+                run.used = used
             if not failed:
                 run.investigations.append({"tool": name, "params": params, "output": output})
             if log is not None:

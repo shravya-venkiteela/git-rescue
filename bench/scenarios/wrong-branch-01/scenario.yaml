@@ -14,7 +14,7 @@ hidden_intent: >
 
 clarifications:
   pushed_to_remote: "No, nothing is pushed yet."
-  target_branch_name: "The branch is called feature."
+  feature_branch_name: "The branch is called feature."
   current_branch_name: "I'm on main."
   which_commits_moved: "My last two commits."
   commit_hash_known: "No, I don't know the hashes."

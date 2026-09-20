@@ -33,11 +33,14 @@ class SimulatedUser:
         if self.asked > self.max_questions:
             return "Please just fix it, I've answered enough questions."
         q = _words(question)
-        best, best_score = None, MIN_OVERLAP - 1
-        for key in sorted(self.clarifications):
-            score = len(q & _words(key.replace("_", " ")))
-            if score > best_score:
-                best, best_score = key, score
+        scores = {key: len(q & _words(key.replace("_", " "))) for key in self.clarifications}
+        top = max(scores.values(), default=0)
+        winners = [key for key, score in scores.items() if score == top]
+        #A tie means the question fits two answers equally well. Picking one
+        #was alphabetical, so "current_branch_name" won every tie: a real run
+        #asked "What is the name of the feature branch?" four times and was
+        #told "I'm on main." four times. A wrong answer is worse than none.
+        best = winners[0] if top >= MIN_OVERLAP and len(winners) == 1 else None
         if best is None:
             self.unanswered.append(question)
             return IDK

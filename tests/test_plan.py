@@ -48,3 +48,26 @@ def test_placeholders_are_rejected_because_b2_used_them():
 def test_unrecoverable_and_secret_fields_survive_parsing():
     plan = parse({**GOOD, "unrecoverable": ["unstaged edits to app.py"], "rotate_secrets_first": True})
     assert plan.unrecoverable == ["unstaged edits to app.py"] and plan.rotate_secrets_first
+
+
+@pytest.mark.parametrize("command", [
+    "git reflog expire --expire=now --all && git gc --prune=now",
+    "git log | head",
+    "git status; git log",
+    "git show HEAD > out.txt",
+])
+def test_shell_operators_are_rejected_with_a_reason(command):
+    """Steps run without a shell. A chained clean-up once failed only by
+    accident because git received '&&' as an argument."""
+    with pytest.raises(PlanError, match="own step"):
+        parse({"diagnosis": "d", "confidence": "high",
+               "steps": [{"command": command, "purpose": "p", "risk": "safe"}]})
+
+
+def test_step_text_keeps_quotes_so_it_splits_back_the_same():
+    from src.git_rescue.plan import split_command
+    plan = parse({"diagnosis": "d", "confidence": "high", "steps": [
+        {"command": 'git stash store -m "recovered stash" abc123', "purpose": "p", "risk": "reversible"}]})
+    step = plan.steps[0]
+    assert step.argv == ["git", "stash", "store", "-m", "recovered stash", "abc123"]
+    assert split_command(step.text) == step.argv

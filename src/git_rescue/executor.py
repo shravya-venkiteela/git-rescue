@@ -25,6 +25,9 @@ class Outcome:
     shadow_diff: str = ""
     backup: object = None
     verified: bool = True
+    #True once any step has run on the REAL repository. Until then a failure
+    #(blocked, fails on the copy, not confirmed) left the repository untouched.
+    ran_for_real: bool = False
 
 
 def _env():
@@ -120,8 +123,8 @@ def execute(repo: Path, plan, confirm=None, backup_root: Path | None = None) -> 
 
     if not ok:
         return Outcome(False, "a step failed even though the copy succeeded; use `git rescue undo`",
-                       steps=results, review=review, shadow_diff=diff, backup=saved, verified=False)
+                       steps=results, ran_for_real=True, review=review, shadow_diff=diff, backup=saved, verified=False)
     if not verified:
         return Outcome(False, "the result differs from the preview; use `git rescue undo`",
-                       steps=results, review=review, shadow_diff=diff, backup=saved, verified=False)
-    return Outcome(True, "plan applied", steps=results, review=review, shadow_diff=diff, backup=saved)
+                       steps=results, ran_for_real=True, review=review, shadow_diff=diff, backup=saved, verified=False)
+    return Outcome(True, "plan applied", steps=results, ran_for_real=True, review=review, shadow_diff=diff, backup=saved)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from git_rescue.plan import split_command
+from src.git_rescue.plan import split_command
 
 SYSTEM_PROMPT = """You are fixing a broken git repository for a developer.
 

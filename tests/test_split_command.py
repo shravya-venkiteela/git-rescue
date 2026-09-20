@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from git_rescue.plan import split_command
+from src.git_rescue.plan import split_command
 
 
 @pytest.mark.parametrize("command,argv", [

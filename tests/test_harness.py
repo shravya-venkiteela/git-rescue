@@ -144,3 +144,18 @@ def test_simulated_user_stops_after_max_questions():
     u = SimulatedUser({"pushed": "No."}, max_questions=1)
     u.answer("pushed?")
     assert "enough" in u.answer("pushed?")
+
+
+def test_a_tied_question_is_not_answered_with_a_guess():
+    """Both keys share "branch" and "name" with this question. Alphabetical
+    order used to pick current_branch_name, so the user said "I'm on main."
+    when asked what the feature branch was called."""
+    u = SimulatedUser({"current_branch_name": "I'm on main.",
+                       "deleted_branch_name": "It was called feature."})
+    assert u.answer("What is the branch name?") == IDK
+
+
+def test_the_more_specific_key_wins():
+    u = SimulatedUser({"current_branch_name": "I'm on main.",
+                       "feature_branch_name": "The branch is called feature."})
+    assert u.answer("What is the name of the feature branch you created?") == "The branch is called feature."

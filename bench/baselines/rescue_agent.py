@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from git_rescue.plan import split_command
+from src.git_rescue.plan import split_command
 from src.git_rescue import executor
 from src.git_rescue.agent import RescueAgent
 
@@ -8,15 +8,37 @@ from src.git_rescue.agent import RescueAgent
 class RescueAgentSystem:
     uses_oracle = False
 
-    def __init__(self, backend, budget: int = 12, name: str = "rescue_agent"):
+    def __init__(self, backend, budget: int = 12, name: str = "rescue_agent", max_replans: int = 1):
         self.agent = RescueAgent(backend, budget=budget)
         self.name = name
+        #When a plan fails on the COPY, nothing real has changed, and the error
+        #says exactly what was wrong. Stopping there threw away plans that
+        #needed one fix (a wrong dangling SHA, a needless clean-up step).
+        #Replans are logged, so results can say which recoveries needed one.
+        self.max_replans = max_replans
 
     def run(self, session) -> None:
         run = self.agent.investigate(
             session.repo_path, session.user_message,
             ask=session.ask, log=session.events.append,
         )
+        while True:
+            outcome = self._attempt(session, run)
+            retryable = outcome is not None and not outcome.ok and not outcome.ran_for_real
+            if not retryable or run.replans >= self.max_replans:
+                return
+            session.events.append({"type": "replan", "reason": outcome.reason})
+            run = self.agent.investigate(
+                session.repo_path, session.user_message,
+                ask=session.ask, log=session.events.append, resume=run,
+                feedback=(f"Your plan was tried on a COPY of the repository and failed, so "
+                          f"nothing real was changed:\n{outcome.reason}\n"
+                          f"Give a corrected plan."),
+            )
+
+    def _attempt(self, session, run):
+        """Record and execute one plan. Returns the executor's outcome, or
+        None when there was nothing to execute."""
         session.events.append({
             "type": "investigation",
             "tools": [i["tool"] for i in run.investigations],
@@ -25,7 +47,7 @@ class RescueAgentSystem:
 
         if run.plan is None:
             session.say(run.gave_up or "I could not produce a plan.")
-            return
+            return None
 
         plan = run.plan
         session.events.append({
@@ -36,7 +58,7 @@ class RescueAgentSystem:
 
         if not plan.steps:
             session.say(plan.diagnosis)
-            return
+            return None
 
         backup_root = session.home / "rescue-backups"
         outcome = executor.execute(session.repo_path, plan, confirm=lambda *a: True,
@@ -64,3 +86,4 @@ class RescueAgentSystem:
         if plan.rotate_secrets_first:
             note += " Rotate the exposed secret first: a committed secret must be treated as leaked."
         session.say(note if outcome.ok else f"{note} ({outcome.reason})")
+        return outcome
