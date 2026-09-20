@@ -195,6 +195,10 @@ class OpenAICompatibleBackend:
                 continue
             if not text.strip():
                 raw.append(getattr(self, "last_empty", "<empty reply>"))
+                #Resending the identical prompt got an identical empty reply
+                #(12 of 27 runs lost this way), so the retry says what happened.
+                if "Your previous reply was empty" not in prompt:
+                    prompt += "\n\nYour previous reply was empty. Reply now with exactly one JSON object."
                 continue
             raw.append(text)
             parsed = _loads_object(text)

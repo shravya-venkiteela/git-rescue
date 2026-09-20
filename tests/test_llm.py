@@ -226,3 +226,12 @@ def test_an_empty_reply_records_why():
     reply = backend_for(server).json_reply("x")
     assert reply.parsed is None and reply.transport_error == ""
     assert "finish_reason=length" in reply.text and "reasoning_chars=50" in reply.text
+
+
+def test_an_empty_reply_is_retried_with_a_nudge_not_the_same_prompt():
+    empty = {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": ""}}]}
+    server, seen = serve([(200, empty), (200, completion('{"ready": true}'))])
+    reply = backend_for(server).json_reply("original prompt")
+    assert reply.parsed == {"ready": True}
+    assert "was empty" not in seen[0]["body"]["messages"][-1]["content"]
+    assert "was empty" in seen[1]["body"]["messages"][-1]["content"]

@@ -160,7 +160,25 @@ def call(repo: Path, name: str, params: dict) -> str:
                     f" Use a value you have seen in output.{hint}")
     argv = TOOLS[name].build(repo, **clean)
     out = _run(repo, argv)
+    if name == "dangling":
+        out = _label_commits(repo, out)
     return out or "(no output)"
+
+
+def _label_commits(repo: Path, fsck_output: str) -> str:
+    """Add each unreachable commit's subject. A dropped stash leaves two
+    commits, "WIP on main: ..." (the work) and "index on main: ..." (the
+    index); without subjects the model picked the index commit in 4 of 4
+    runs. This is what the usual manual recipe (fsck, then log each commit)
+    shows a person."""
+    lines = []
+    for line in fsck_output.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[1] == "commit":
+            subject = _run(repo, ["git", "log", "-1", "--format=%s", parts[2]])
+            line = f"{line}  {subject[:100]}" if subject else line
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def describe() -> str:

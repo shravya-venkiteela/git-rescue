@@ -2,6 +2,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from src.git_rescue import backup as backup_mod
@@ -30,17 +31,24 @@ class Outcome:
     ran_for_real: bool = False
 
 
-def _env():
+def _env(date: str | None = None):
     from bench.gitenv import isolated_env
 
     env = isolated_env(Path(tempfile.gettempdir()) / "git-rescue-exec-home")
     env.update({"GIT_EDITOR": ":", "GIT_SEQUENCE_EDITOR": ":", "GIT_PAGER": "cat",
                 "GIT_MERGE_AUTOEDIT": "no", "GIT_TERMINAL_PROMPT": "0"})
+    if date:
+        #Same clock for the preview and the real run, so a step that makes a
+        #commit (cherry-pick, merge, commit) makes the SAME commit both times.
+        #Without this a correct plan failed "differs from the preview" because
+        #the real cherry-pick ran one second later. Cherry-pick and rebase keep
+        #the original author date regardless; only new timestamps are pinned.
+        env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = date
     return env
 
 
-def _run(repo: Path, argv: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(argv, cwd=repo, env=_env(), stdin=subprocess.DEVNULL,
+def _run(repo: Path, argv: list[str], date: str | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, cwd=repo, env=_env(date), stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=60)
 
@@ -60,10 +68,10 @@ def fingerprint(repo: Path) -> str:
     return "\n".join(parts)
 
 
-def _apply(repo: Path, steps) -> tuple[list[StepResult], bool]:
+def _apply(repo: Path, steps, date: str | None = None) -> tuple[list[StepResult], bool]:
     results = []
     for step in steps:
-        p = _run(repo, step.argv)
+        p = _run(repo, step.argv, date)
         output = (p.stdout + p.stderr).strip()
         results.append(StepResult(step.text, p.returncode, output))
         if p.returncode != 0:
@@ -71,13 +79,13 @@ def _apply(repo: Path, steps) -> tuple[list[StepResult], bool]:
     return results, True
 
 
-def shadow_run(repo: Path, steps) -> tuple[list[StepResult], bool, str]:
+def shadow_run(repo: Path, steps, date: str | None = None) -> tuple[list[StepResult], bool, str]:
     """Run the plan on a copy and report what changed. This is the dry run."""
     with tempfile.TemporaryDirectory(prefix="git-rescue-shadow-") as tmp:
         copy = Path(tmp) / "repo"
         shutil.copytree(repo, copy, symlinks=True)
         before = fingerprint(copy)
-        results, ok = _apply(copy, steps)
+        results, ok = _apply(copy, steps, date)
         after = fingerprint(copy)
         return results, ok, _diff(before, after)
 
@@ -101,7 +109,8 @@ def execute(repo: Path, plan, confirm=None, backup_root: Path | None = None) -> 
     if not plan.steps:
         return Outcome(False, "the plan has no steps to run", review=review)
 
-    shadow_steps, shadow_ok, diff = shadow_run(repo, plan.steps)
+    date = f"{int(time.time())} +0000"
+    shadow_steps, shadow_ok, diff = shadow_run(repo, plan.steps, date)
     if not shadow_ok:
         failed = next(s for s in shadow_steps if s.returncode != 0)
         return Outcome(False, f"the plan fails on a copy, so it was not run here: "
@@ -118,7 +127,7 @@ def execute(repo: Path, plan, confirm=None, backup_root: Path | None = None) -> 
     saved = backup_mod.create(repo, note=plan.diagnosis, root=backup_root) if destructive else None
 
     before = fingerprint(repo)
-    results, ok = _apply(repo, plan.steps)
+    results, ok = _apply(repo, plan.steps, date)
     verified = _diff(before, fingerprint(repo)) == diff
 
     if not ok:

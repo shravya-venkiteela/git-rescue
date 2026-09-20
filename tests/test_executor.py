@@ -149,3 +149,22 @@ def test_outcome_says_whether_the_real_repository_was_touched(built):
     assert not execute(repo.path, plan("git branch -d no-such-branch")).ran_for_real
     assert not execute(repo.path, plan("git gc")).ran_for_real
     assert execute(repo.path, plan(f"git branch feature {labels['feat2']}")).ran_for_real
+
+
+def test_a_plan_that_makes_commits_matches_its_preview(built, monkeypatch):
+    """A cherry-pick made one second after the preview got a new SHA, and a
+    correct plan was reported as "differs from the preview"."""
+    import src.git_rescue.executor as ex
+    from bench.loader import load_all
+    from src.git_rescue.plan import parse
+    scenario = {s.id: s for s in load_all()}["deleted-branch-01"]
+    repo, labels = built(scenario)
+    real_apply = ex._apply
+    def slow_apply(*args, **kwargs):
+        ex.time.sleep(1.1)                 # the real run starts in a later second
+        return real_apply(*args, **kwargs)
+    monkeypatch.setattr(ex, "_apply", slow_apply)
+    plan = parse({"diagnosis": "d", "confidence": "high", "steps": [
+        {"command": "git commit --allow-empty -m 'rescue checkpoint'", "purpose": "p", "risk": "reversible"}]})
+    outcome = ex.execute(repo.path, plan)
+    assert outcome.ok and outcome.verified, outcome.reason

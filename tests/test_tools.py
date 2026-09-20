@@ -83,3 +83,14 @@ def test_count_is_clamped_not_trusted(built):
 def test_describe_lists_every_tool():
     text = tools.describe()
     assert all(name in text for name in ALL)
+
+
+def test_dangling_commits_are_labelled_with_their_subject(built):
+    """A dropped stash is two commits; only the subject tells them apart."""
+    from bench.loader import load_all
+    from src.git_rescue import tools
+    scenario = {s.id: s for s in load_all()}["dropped-stash-01"]
+    repo, _ = built(scenario)
+    out = tools.call(repo.path, "dangling", {})
+    commits = [l for l in out.splitlines() if " commit " in l]
+    assert any("WIP on" in l for l in commits) and any("index on" in l for l in commits)
