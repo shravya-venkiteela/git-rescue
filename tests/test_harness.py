@@ -159,3 +159,24 @@ def test_the_more_specific_key_wins():
     u = SimulatedUser({"current_branch_name": "I'm on main.",
                        "feature_branch_name": "The branch is called feature."})
     assert u.answer("What is the name of the feature branch you created?") == "The branch is called feature."
+
+
+def test_results_are_saved_as_they_finish_and_a_refusing_service_stops_the_sweep(tmp_path, monkeypatch, capsys):
+    """A quota error must end the sweep, and what finished must already be on disk."""
+    import json
+    from bench.harness import runner
+    from bench.harness.llm import Reply
+
+    class Refusing:
+        name = "refusing"
+        def json_reply(self, prompt, system=None):
+            return Reply("", None, 3, 0.0, [], transport_error="HTTP 429: tokens per day (TPD). try again in 7m12s")
+
+    monkeypatch.setattr(runner, "RESULTS_DIR", tmp_path)
+    monkeypatch.setattr("bench.harness.llm.build_backend", lambda *a, **k: Refusing())
+    runner.main(["--system", "rescue_agent", "--provider", "groq", "--repeats", "3"])
+    out = capsys.readouterr().out
+    [run_dir] = list(tmp_path.iterdir())
+    rows = [json.loads(l) for l in (run_dir / "results.jsonl").read_text().splitlines()]
+    assert len(rows) == 1 and rows[0]["category"] == "backend_unavailable"
+    assert "STOPPED" in out and "TPD" in out

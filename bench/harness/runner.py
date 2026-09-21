@@ -144,6 +144,29 @@ def run_scenario(scenario, system, repeat: int = 0, prebuilt=None, max_commands:
             shutil.rmtree(workdir, ignore_errors=True)
 
 
+def append_result(r: RunResult, out_dir: Path) -> None:
+    """Write one result the moment it exists. Saving only at the end lost 14
+    finished runs to a single Ctrl+C."""
+    (out_dir / "transcripts").mkdir(parents=True, exist_ok=True)
+    row = asdict(r)
+    events = row.pop("events")
+    row["clean_recovery"] = r.clean_recovery
+    with open(out_dir / "results.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+    name = f"{r.scenario}__{r.system}__{r.repeat}.json"
+    (out_dir / "transcripts" / name).write_text(json.dumps(events, indent=2), encoding="utf-8")
+
+
+def service_stop_reason(r: RunResult) -> str:
+    """Why the sweep must stop, or "". Once the provider refuses (bad key,
+    daily quota), every later run would be recorded as a fake failure."""
+    if r.category != "backend_unavailable":
+        return ""
+    errors = [e["transport_error"] for e in r.events
+              if e.get("type") == "model_reply" and e.get("transport_error")]
+    return errors[-1][:400] if errors else "the model could not be reached"
+
+
 def save(results: list[RunResult], out_dir: Path) -> None:
     (out_dir / "transcripts").mkdir(parents=True, exist_ok=True)
     with open(out_dir / "results.jsonl", "w", encoding="utf-8") as f:
@@ -219,15 +242,6 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     scenarios = [s for s in load_all() if not args.scenario or s.id in args.scenario]
-    results = []
-    for system_name in args.system:
-        system = build_system(system_name, args)
-        for scenario in scenarios:
-            for i in range(args.repeats):
-                r = run_scenario(scenario, system, repeat=i)
-                results.append(r)
-                status = "RECOVERED" if r.recovered else "failed"
-                print(f"{system_name:12} {scenario.id:28} {status:9} loss={r.practical_loss} {r.seconds}s")
 
     uses_model = any(s in MODEL_SYSTEMS for s in args.system)
     from bench.harness.llm import PRESETS
@@ -235,7 +249,31 @@ def main(argv: list[str] | None = None) -> None:
     model_tag = ("-" + args.provider + "-" + model_label.replace(":", "").replace("/", "")) if uses_model else ""
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + "-".join(args.system) + model_tag
     out_dir = RESULTS_DIR / run_id
-    save(results, out_dir)
+
+    results, stopped = [], ""
+    try:
+        for system_name in args.system:
+            system = build_system(system_name, args)
+            #Repeat-major: every scenario once, then again. If the run is cut
+            #short, what exists is complete passes rather than 3 runs of a few.
+            for i in range(args.repeats):
+                for scenario in scenarios:
+                    r = run_scenario(scenario, system, repeat=i)
+                    results.append(r)
+                    append_result(r, out_dir)
+                    status = "RECOVERED" if r.recovered else "failed"
+                    print(f"{system_name:12} {scenario.id:28} {status:9} loss={r.practical_loss} {r.seconds}s")
+                    stopped = service_stop_reason(r)
+                    if stopped:
+                        raise StopIteration
+    except StopIteration:
+        print(f"\nSTOPPED: the model service refused, so later runs would be fake failures."
+              f"\n  {stopped}\n  The last run above is recorded as backend_unavailable, not as a model failure.")
+    except KeyboardInterrupt:
+        print("\nInterrupted. Every run finished so far is saved.")
+
+    if not results:
+        return
     print()
     print(summarize(results))
     print(f"\nwrote {out_dir}")
