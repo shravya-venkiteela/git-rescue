@@ -51,7 +51,7 @@ Recoverable: yes
 
 4. branch-force-01
 
-Link: https://stackoverflow.com/questions/54307602/how-to-fix-a-git-master-branch-after-accidently-merging-the-wrong-branch
+Link: none 
 
 What the user did: main had 4 commits; the last two were "Add search stub" and "Return query from search". The user was on branch feature (which branched off main earlier). Meaning to move a different branch, they ran git branch -f main <sha of the second commit>, which moved main back two commits. They are still on feature. (They were NOT on main: git refuses to force-move the branch you're on.)
 
