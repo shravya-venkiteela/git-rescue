@@ -1,5 +1,5 @@
 id: reset-hard-staged-01
-source: TODO 
+source: https://stackoverflow.com/questions/1108853/recovering-added-staged-file-after-doing-git-reset-hard-head
 category: reset_hard_staged
 recoverable: true
 

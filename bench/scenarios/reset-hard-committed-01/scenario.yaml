@@ -1,5 +1,5 @@
 id: reset-hard-committed-01
-source: TODO  # link the Stack Overflow question this scenario is based on
+source: https://stackoverflow.com/questions/5473/how-can-i-undo-git-reset-hard-head1
 category: reset_hard
 recoverable: true
 

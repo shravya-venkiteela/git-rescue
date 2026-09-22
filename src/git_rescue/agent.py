@@ -118,7 +118,8 @@ class RescueAgent:
             if log is not None:
                 log({"type": "model_reply", "planning": planning, "parsed": reply.parsed is not None,
                      "attempts": reply.attempts, "seconds": round(reply.seconds, 2),
-                     "text": reply.text, "transport_error": reply.transport_error})
+                     "text": reply.text, "transport_error": reply.transport_error,
+                     "tokens": reply.tokens})
 
             if reply.parsed is None:
                 run.gave_up = (f"could not reach the model: {reply.transport_error}"

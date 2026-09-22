@@ -1,5 +1,5 @@
 id: deleted-branch-01
-source: TODO  # link the Stack Overflow question this scenario is based on
+source: https://stackoverflow.com/questions/3640764/can-i-recover-a-branch-after-its-deletion-in-git
 category: deleted_branch
 recoverable: true
 

@@ -1,5 +1,5 @@
 id: bad-amend-01
-source: TODO  
+source: https://stackoverflow.com/questions/1459150/how-to-undo-git-commit-amend-done-instead-of-git-commit 
 category: bad_amend
 recoverable: true
 

@@ -1,5 +1,5 @@
 id: dropped-stash-01
-source: TODO  # link the Stack Overflow question this scenario is based on
+source: https://stackoverflow.com/questions/89332/how-do-i-recover-a-dropped-stash-in-git
 category: dropped_stash
 recoverable: true
 

@@ -1,5 +1,5 @@
 id: rebase-conflict-abort-01
-source: TODO  
+source: https://stackoverflow.com/questions/64712150/git-rebase-auto-abort-on-conflict
 category: rebase_conflict
 recoverable: true
 

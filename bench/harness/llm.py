@@ -19,6 +19,7 @@ class Reply:
     seconds: float
     raw_attempts: list[str] = field(default_factory=list)
     transport_error: str = ""   # set when the server could not be reached at all
+    tokens: int = 0             # as reported by the provider, all attempts included; 0 = unknown
 
 
 class OllamaBackend:
@@ -151,6 +152,8 @@ class OpenAICompatibleBackend:
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             body = json.loads(response.read().decode())
+        #Free tiers cap tokens per day, so every call's usage is counted.
+        self.tokens_used = getattr(self, "tokens_used", 0) + int((body.get("usage") or {}).get("total_tokens") or 0)
         choice = body["choices"][0]
         content = choice["message"].get("content") or ""
         if not content.strip():
@@ -163,6 +166,7 @@ class OpenAICompatibleBackend:
         return content
 
     def json_reply(self, prompt: str, system: str | None = None) -> Reply:
+        tokens_before = getattr(self, "tokens_used", 0)
         start, raw, transport, json_mode = time.monotonic(), [], "", True
         for attempt in range(1, self.max_attempts + 1):
             try:
@@ -203,9 +207,11 @@ class OpenAICompatibleBackend:
             raw.append(text)
             parsed = _loads_object(text)
             if parsed is not None:
-                return Reply(text, parsed, attempt, time.monotonic() - start, raw)
+                return Reply(text, parsed, attempt, time.monotonic() - start, raw,
+                             tokens=getattr(self, "tokens_used", 0) - tokens_before)
         return Reply(raw[-1] if raw else "", None, self.max_attempts, time.monotonic() - start,
-                     raw, transport_error=transport)
+                     raw, transport_error=transport,
+                     tokens=getattr(self, "tokens_used", 0) - tokens_before)
 
 
 def _loads_object(text: str) -> dict | None:

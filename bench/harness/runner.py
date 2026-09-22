@@ -202,6 +202,16 @@ def summarize(results: list[RunResult]) -> str:
     for name in sorted({r.system for r in results}):
         counts = Counter(r.category for r in results if r.system == name)
         lines.append(f"  {name:30} " + ", ".join(f"{k}={v}" for k, v in counts.most_common()))
+    lines.append("")
+    lines.append("tokens (as reported by the provider; free tiers cap these per day):")
+    for name in sorted({r.system for r in results}):
+        rs = [r for r in results if r.system == name]
+        per_run = [sum(e.get("tokens", 0) for e in r.events if e["type"] == "model_reply") for r in rs]
+        if sum(per_run):
+            lines.append(f"  {name:30} total={sum(per_run):,}  per run: avg={sum(per_run) // len(rs):,}"
+                         f" max={max(per_run):,}")
+        else:
+            lines.append(f"  {name:30} not reported by this backend")
     return "\n".join(lines)
 
 

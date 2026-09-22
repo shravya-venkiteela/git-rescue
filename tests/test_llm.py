@@ -235,3 +235,18 @@ def test_an_empty_reply_is_retried_with_a_nudge_not_the_same_prompt():
     assert reply.parsed == {"ready": True}
     assert "was empty" not in seen[0]["body"]["messages"][-1]["content"]
     assert "was empty" in seen[1]["body"]["messages"][-1]["content"]
+
+
+def test_token_usage_is_counted_across_attempts():
+    """Free tiers cap tokens per day; a sweep must be able to say what it used."""
+    def with_usage(text, n):
+        body = completion(text)
+        body["usage"] = {"total_tokens": n}
+        return body
+    server, _ = serve([(200, with_usage("prose", 100)), (200, with_usage('{"ready": true}', 250))])
+    b = backend_for(server)
+    reply = b.json_reply("x")
+    assert reply.parsed == {"ready": True} and reply.tokens == 350
+    server, _ = serve([(200, with_usage('{"a": 1}', 40))])
+    b.url = f"http://127.0.0.1:{server.server_port}/v1/chat/completions"
+    assert b.json_reply("x").tokens == 40          # per call, not cumulative

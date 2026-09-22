@@ -43,6 +43,7 @@ class UnrestrictedShellSystem:
                 "type": "model_reply", "turn": turn, "attempts": reply.attempts,
                 "seconds": round(reply.seconds, 2), "parsed": reply.parsed is not None,
                 "text": reply.text, "transport_error": reply.transport_error,
+                "tokens": reply.tokens,
             })
             if reply.parsed is None:
                 session.say("The model did not return usable JSON.")
