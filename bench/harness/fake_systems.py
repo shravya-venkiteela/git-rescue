@@ -33,8 +33,10 @@ class ReferenceSystem:
 
     def run(self, session) -> None:
         scenario, labels = session.oracle
-        scenario.module.solve(SessionRepo(session), labels)
-        session.say("Applied the scenario's reference solution.")
+        #A solution may return what it tells the user: for an unrecoverable
+        #scenario, saying so IS the solution.
+        said = scenario.module.solve(SessionRepo(session), labels)
+        session.say(said or "Applied the scenario's reference solution.")
 
 
 class WrongFixSystem:
@@ -44,8 +46,8 @@ class WrongFixSystem:
     def run(self, session) -> None:
         scenario, labels = session.oracle
         fix_name = sorted(scenario.module.WRONG_FIXES)[0]
-        scenario.module.WRONG_FIXES[fix_name](SessionRepo(session), labels)
-        session.say(f"Applied wrong fix '{fix_name}'.")
+        said = scenario.module.WRONG_FIXES[fix_name](SessionRepo(session), labels)
+        session.say(said or f"Applied wrong fix '{fix_name}'.")
 
 
 class DoNothingSystem:

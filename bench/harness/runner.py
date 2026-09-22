@@ -119,7 +119,8 @@ def run_scenario(scenario, system, repeat: int = 0, prebuilt=None, max_commands:
             error = traceback.format_exc(limit=5)
             session.events.append({"type": "error", "traceback": error})
 
-        results = evaluate(repo.path, scenario.spec["assertions"], labels)
+        said = "\n".join(e["message"] for e in session.events if e.get("type") == "say")
+        results = evaluate(repo.path, scenario.spec["assertions"], labels, message=said)
         backup = take_snapshot(session.backup_dir) if session.backup_dir and session.backup_dir.exists() else None
         allowed = frozenset(labels[n] for n in scenario.spec.get("may_discard", []))
         loss = check(before, take_snapshot(repo.path), backup, allowed_to_lose=allowed)
@@ -241,6 +242,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--system", action="append", required=True, choices=ALL_SYSTEMS)
     parser.add_argument("--scenario", action="append", help="scenario id (default: all)")
+    parser.add_argument("--heldout", action="store_true",
+                        help="run the held-out test set instead (bench/heldout). Do this ONCE, at the end.")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--provider", default="ollama", choices=["ollama", "gemini", "groq", "openrouter"],
                         help="where model-backed systems get their model")
@@ -251,13 +254,19 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--budget", type=int, default=12, help="investigation tool budget for rescue_agent")
     args = parser.parse_args(argv)
 
-    scenarios = [s for s in load_all() if not args.scenario or s.id in args.scenario]
+    from bench.loader import HELDOUT_DIR
+    pool = load_all(HELDOUT_DIR) if args.heldout else load_all()
+    scenarios = [s for s in pool if not args.scenario or s.id in args.scenario]
+    if not scenarios:
+        print("no scenarios to run" + (" (bench/heldout is empty)" if args.heldout else ""))
+        return
 
     uses_model = any(s in MODEL_SYSTEMS for s in args.system)
     from bench.harness.llm import PRESETS
     model_label = args.model or (PRESETS[args.provider][2] if args.provider in PRESETS else "qwen2.5:7b")
     model_tag = ("-" + args.provider + "-" + model_label.replace(":", "").replace("/", "")) if uses_model else ""
-    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + "-".join(args.system) + model_tag
+    run_id = (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ("-HELDOUT" if args.heldout else "")
+              + "-" + "-".join(args.system) + model_tag)
     out_dir = RESULTS_DIR / run_id
 
     results, stopped = [], ""

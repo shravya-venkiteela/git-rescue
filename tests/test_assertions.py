@@ -1,3 +1,5 @@
+from pathlib import Path
+import pytest
 from bench.harness.assertions import content_reachable_from_local_branch, worktree_file_matches_commit
 from bench.loader import SCENARIOS_DIR, load
 
@@ -28,3 +30,37 @@ def test_crlf_checkout_still_matches(built):
     f = repo.path / "login.py"
     f.write_bytes(f.read_bytes().replace(b"\n", b"\r\n"))
     assert worktree_file_matches_commit(repo.path, labels["stash"], "login.py")
+
+
+@pytest.mark.parametrize("message,expected", [
+    ("Those edits were never committed, so they cannot be recovered.", True),
+    ("Cannot be recovered: uncommitted changes to login.py.", True),
+    ("Unfortunately the files are permanently deleted.", True),
+    ("git clean removed them; they are gone for good.", True),
+    ("There's no way to get those changes back.", True),
+    ("Your commits can be recovered from the reflog.", False),
+    ("Run git branch feature ced977b to restore it.", False),
+    ("", False),
+])
+def test_says_unrecoverable(message, expected):
+    from bench.harness.assertions import says_unrecoverable
+    assert says_unrecoverable(Path("."), message) is expected
+
+
+@pytest.mark.parametrize("message,expected", [
+    ("Rotate the exposed secret first: a committed secret must be treated as leaked.", True),
+    ("Revoke that API key in your provider's dashboard now.", True),
+    ("The token should be regenerated before anything else.", True),
+    ("I removed .env from the commit and added it to .gitignore.", False),
+])
+def test_says_to_rotate_secret(message, expected):
+    from bench.harness.assertions import says_to_rotate_secret
+    assert says_to_rotate_secret(Path("."), message) is expected
+
+
+def test_message_assertions_validate_and_receive_the_message():
+    from bench.harness.assertions import evaluate, validate
+    specs = [{"type": "says_unrecoverable"}]
+    assert validate(specs) == []
+    assert evaluate(Path("."), specs, {}, message="it is lost")[0].passed
+    assert not evaluate(Path("."), specs, {}, message="")[0].passed

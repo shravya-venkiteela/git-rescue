@@ -94,15 +94,19 @@ def parse(data: dict) -> Plan:
         steps.append(Step(argv, purpose, risk))
 
     questions = [str(q) for q in (data.get("questions") or []) if str(q).strip()]
-    if not steps and not questions:
-        raise PlanError("a plan needs either steps, or questions to ask the user first")
+    unrecoverable = [str(u) for u in (data.get("unrecoverable") or []) if str(u).strip()]
+    #"It is gone, and here is what" is a complete answer. Requiring a step
+    #made the only honest plan for lost uncommitted work fail validation.
+    if not steps and not questions and not unrecoverable:
+        raise PlanError("a plan needs steps, questions to ask the user first, or a list of "
+                        "what is unrecoverable")
 
     return Plan(
         diagnosis=diagnosis,
         confidence=confidence,
         steps=steps,
         questions=questions,
-        unrecoverable=[str(u) for u in (data.get("unrecoverable") or []) if str(u).strip()],
+        unrecoverable=unrecoverable,
         rotate_secrets_first=bool(data.get("rotate_secrets_first", False)),
         raw=data,
     )

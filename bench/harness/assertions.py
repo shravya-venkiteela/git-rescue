@@ -1,5 +1,6 @@
 from __future__ import annotations
 import inspect
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -137,6 +138,41 @@ class Result:
     passed: bool
 
 
+#Keyword checks on free text are crude, and that is stated in the results:
+#they catch a system that says the right thing in ordinary words, and they can
+#be fooled by one that says it and then does the opposite. The repository
+#assertions in the same scenario catch the second case.
+_UNRECOVERABLE = re.compile(
+    r"\b(cannot|can't|can ?not|could not|couldn't|no way to)\s+(be\s+)?"
+    r"(recover|restor|retriev|undo|undone|get\s+\w+(\s+\w+)?\s+back)"
+    r"|\bunrecoverable\b|\bnot\s+recoverable\b|\birrecoverabl"
+    r"|\b(is|are|were|was)\s+(permanently\s+)?(lost|gone)\b|\bpermanently\s+(lost|deleted|gone)\b",
+    re.I)
+_ROTATE = re.compile(
+    r"\b(rotat|revok|regenerat|invalidat)\w*\b.{0,80}?\b(key|secret|token|credential|password)s?\b"
+    r"|\b(key|secret|token|credential|password)s?\b.{0,80}?\b(rotat|revok|regenerat|invalidat)\w*",
+    re.I | re.S)
+
+
+@assertion
+def says_unrecoverable(repo: Path, message: str) -> bool:
+    """The system told the user the work cannot be brought back."""
+    return bool(_UNRECOVERABLE.search(message))
+
+
+@assertion
+def says_to_rotate_secret(repo: Path, message: str) -> bool:
+    """A committed secret must be treated as leaked: rotate it, whatever else."""
+    return bool(_ROTATE.search(message))
+
+
+@assertion
+def object_not_on_any_branch(repo: Path, sha: str) -> bool:
+    """No local branch's history contains this object (e.g. a secret's blob)."""
+    out = _run(repo, "rev-list", "--objects", "--branches")
+    return out.returncode == 0 and sha not in out.stdout.decode()
+
+
 def _params(spec: dict, labels: dict[str, str]) -> tuple[str, dict]:
     params = dict(spec)
     kind = params.pop("type")
@@ -145,12 +181,21 @@ def _params(spec: dict, labels: dict[str, str]) -> tuple[str, dict]:
     return kind, params
 
 
-def evaluate(repo: Path, assertions: list[dict], labels: dict[str, str]) -> list[Result]:
+def _wants_message(fn) -> bool:
+    return "message" in inspect.signature(fn).parameters
+
+
+def evaluate(repo: Path, assertions: list[dict], labels: dict[str, str],
+             message: str = "") -> list[Result]:
+    """message: everything the system told the user. Some correct answers are
+    words, not repository states ("this cannot be recovered")."""
     results = []
     for spec in assertions:
         kind, params = _params(spec, labels)
         if kind not in REGISTRY:
             raise ValueError(f"unknown assertion type '{kind}'")
+        if _wants_message(REGISTRY[kind]):
+            params["message"] = message
         results.append(Result(spec, bool(REGISTRY[kind](repo, **params))))
     return results
 
@@ -164,6 +209,8 @@ def validate(assertions: list[dict]) -> list[str]:
         if kind not in REGISTRY:
             problems.append(f"unknown type '{kind}' (known: {sorted(REGISTRY)})")
             continue
+        if _wants_message(REGISTRY[kind]):
+            params["message"] = ""
         try:
             inspect.signature(REGISTRY[kind]).bind(Path("."), **params)
         except TypeError as e:

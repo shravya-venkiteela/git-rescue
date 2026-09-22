@@ -1,12 +1,13 @@
 import sys
 
-from bench.loader import SCENARIOS_DIR
+from bench.loader import HELDOUT_DIR, SCENARIOS_DIR
 
-scenario_id, category = sys.argv[1], sys.argv[2]
-folder = SCENARIOS_DIR / scenario_id
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+scenario_id, category = args[0], args[1]
+folder = (HELDOUT_DIR if "--heldout" in sys.argv else SCENARIOS_DIR) / scenario_id
 if folder.exists():
     sys.exit(f"{folder} already exists; refusing to overwrite it.")
-folder.mkdir()
+folder.mkdir(parents=True)
 
 (folder / "scenario.yaml").write_text(f"""id: {scenario_id}
 source: TODO

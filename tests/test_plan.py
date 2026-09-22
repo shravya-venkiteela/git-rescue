@@ -24,7 +24,7 @@ def test_questions_without_steps_are_allowed():
     ({"diagnosis": "d", "steps": [{"command": "git status", "purpose": "p", "risk": "safe"}]}, "confidence"),
     ({"diagnosis": "d", "confidence": "very sure",
       "steps": [{"command": "git status", "purpose": "p", "risk": "safe"}]}, "confidence"),
-    ({"diagnosis": "d", "confidence": "high"}, "steps, or questions"),
+    ({"diagnosis": "d", "confidence": "high"}, "what is unrecoverable"),
     ({"diagnosis": "d", "confidence": "high", "steps": [{"command": "rm -rf .", "purpose": "p", "risk": "safe"}]}, "start with 'git'"),
     ({"diagnosis": "d", "confidence": "high", "steps": [{"command": "git reset --hard <sha>", "purpose": "p", "risk": "safe"}]}, "placeholder"),
     ({"diagnosis": "d", "confidence": "high", "steps": [{"command": "git status", "purpose": "p"}]}, "risk"),

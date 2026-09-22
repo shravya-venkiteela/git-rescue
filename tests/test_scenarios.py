@@ -1,9 +1,9 @@
 import json
 import pytest
 from bench.gitenv import BASE_EPOCH, GitRepo
-from bench.loader import load_all
+from bench.loader import HELDOUT_DIR, load_all
 
-SCENARIOS = load_all()
+SCENARIOS = load_all() + load_all(HELDOUT_DIR)
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)

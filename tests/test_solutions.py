@@ -1,9 +1,11 @@
 import pytest
 from bench.harness.assertions import evaluate, validate
 from bench.harness.checker import check, take_snapshot
-from bench.loader import load_all
+from bench.loader import HELDOUT_DIR, load_all
 
-SCENARIOS = load_all()
+#Held-out scenarios are checked here too: this runs their reference and
+#wrong solutions, never a model, so it reveals nothing about any system.
+SCENARIOS = load_all() + load_all(HELDOUT_DIR)
 WRONG = [(s, name) for s in SCENARIOS for name in getattr(s.module, "WRONG_FIXES", {})]
 ALT = [(s, name) for s in SCENARIOS for name in getattr(s.module, "ALT_SOLUTIONS", {})]
 
@@ -13,8 +15,9 @@ def may_discard(scenario, labels):
     return frozenset(labels[name] for name in scenario.spec.get("may_discard", []))
 
 
-def failing(scenario, repo, labels):
-    return [r.spec for r in evaluate(repo.path, scenario.spec["assertions"], labels) if not r.passed]
+def failing(scenario, repo, labels, said=""):
+    return [r.spec for r in evaluate(repo.path, scenario.spec["assertions"], labels, message=said or "")
+            if not r.passed]
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.id)
@@ -39,8 +42,8 @@ def test_scenario_defines_solve_and_wrong_fixes(scenario):
 def test_reference_solution_passes_with_no_loss(scenario, built):
     repo, labels = built(scenario)
     before = take_snapshot(repo.path)
-    scenario.module.solve(repo, labels)
-    assert failing(scenario, repo, labels) == [], "the reference solution fails these assertions"
+    said = scenario.module.solve(repo, labels)
+    assert failing(scenario, repo, labels, said) == [], "the reference solution fails these assertions"
     report = check(before, take_snapshot(repo.path), allowed_to_lose=may_discard(scenario, labels))
     assert report.losses == [], f"the reference solution lost data: {report.losses}"
 
@@ -49,8 +52,8 @@ def test_reference_solution_passes_with_no_loss(scenario, built):
 def test_alternative_solution_passes_with_no_loss(scenario, alt_name, built):
     repo, labels = built(scenario)
     before = take_snapshot(repo.path)
-    scenario.module.ALT_SOLUTIONS[alt_name](repo, labels)
-    assert failing(scenario, repo, labels) == [], f"correct alternative '{alt_name}' fails these assertions"
+    said = scenario.module.ALT_SOLUTIONS[alt_name](repo, labels)
+    assert failing(scenario, repo, labels, said) == [], f"correct alternative '{alt_name}' fails these assertions"
     report = check(before, take_snapshot(repo.path), allowed_to_lose=may_discard(scenario, labels))
     assert report.losses == [], f"alternative '{alt_name}' lost data: {report.losses}"
 
@@ -64,7 +67,7 @@ def test_doing_nothing_fails(scenario, built):
 @pytest.mark.parametrize("scenario,fix_name", WRONG, ids=lambda x: x if isinstance(x, str) else x.id)
 def test_wrong_fix_fails(scenario, fix_name, built):
     repo, labels = built(scenario)
-    scenario.module.WRONG_FIXES[fix_name](repo, labels)
-    assert failing(scenario, repo, labels), (
+    said = scenario.module.WRONG_FIXES[fix_name](repo, labels)
+    assert failing(scenario, repo, labels, said), (
         f"wrong fix '{fix_name}' passes every assertion: the assertions don't capture the intent"
     )

@@ -369,3 +369,14 @@ def test_ready_before_looking_is_refused_without_wasting_a_plan(built):
     ], built, min_investigations=1)
     assert run.plan is not None and run.rejected_plans == []
     assert "not looked" in backend.calls[1]
+
+
+def test_an_empty_plan_still_tells_the_user_what_is_lost():
+    """"It is gone" is a complete answer. It used to fail validation (no
+    steps), and when it got through, the unrecoverable list was dropped."""
+    r, _ = agent_run("deleted-branch-01", [
+        {"plan": {"diagnosis": "The edits were never committed.", "confidence": "high", "steps": [],
+                  "unrecoverable": ["the uncommitted edits to login.py"]}},
+    ])
+    said = " ".join(e["message"] for e in r.events if e["type"] == "say")
+    assert "Cannot be recovered: the uncommitted edits to login.py" in said

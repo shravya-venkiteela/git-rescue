@@ -1,0 +1,26 @@
+id: deleted-file-committed-01
+source: https://stackoverflow.com/questions/68741726/how-can-i-get-a-file-back-after-committing-its-deletion
+category: deleted_file_committed
+recoverable: true
+
+user_message: >
+  A couple of commits ago I deleted config.py because I thought nothing used
+  it, and I committed that. I've made another commit since. Turns out the app
+  needs it. How do I get config.py back without losing my latest commit?
+
+hidden_intent: >
+  config.py back with its old content (committed or not); the README commit
+  still on main; HEAD on main.
+
+clarifications:
+  keep_latest_commit: "Yes, I need to keep my latest commit."
+  which_file_deleted: "config.py."
+  pushed_to_remote: "No, nothing is pushed."
+  current_branch_name: "I'm on main."
+  commit_hash_known: "No, I don't know the hashes."
+
+assertions:
+  - {type: worktree_file_matches_commit, label: with_config, path: config.py}
+  - {type: commit_reachable_from_branch, label: readme, branch: main}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

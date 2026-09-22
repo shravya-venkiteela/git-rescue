@@ -6,6 +6,9 @@ from types import ModuleType
 import yaml
 
 SCENARIOS_DIR = Path(__file__).parent / "scenarios"
+#The final test set. Normal runs never load it: a scenario the agent has been
+#developed against measures the development, not the agent.
+HELDOUT_DIR = Path(__file__).parent / "heldout"
 REQUIRED_KEYS = {"id", "category", "recoverable", "user_message", "hidden_intent", "assertions"}
 
 
@@ -45,9 +48,11 @@ def load(scenario_dir: Path) -> Scenario:
     return Scenario(id=spec["id"], dir=scenario_dir, spec=spec, module=module)
 
 
-def load_all() -> list[Scenario]:
+def load_all(root: Path = SCENARIOS_DIR) -> list[Scenario]:
+    if not root.is_dir():
+        return []
     return [
         load(d)
-        for d in sorted(SCENARIOS_DIR.iterdir())
+        for d in sorted(root.iterdir())
         if d.is_dir() and (d / "scenario.yaml").exists()
     ]

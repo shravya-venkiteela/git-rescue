@@ -57,7 +57,14 @@ class RescueAgentSystem:
         })
 
         if not plan.steps:
-            session.say(plan.diagnosis)
+            #"Nothing can be done" is often the right answer, and then the
+            #unrecoverable list IS the answer. It used to be dropped here.
+            note = plan.diagnosis
+            if plan.unrecoverable:
+                note += " Cannot be recovered: " + "; ".join(plan.unrecoverable) + "."
+            if plan.rotate_secrets_first:
+                note += " Rotate the exposed secret first: a committed secret must be treated as leaked."
+            session.say(note)
             return None
 
         backup_root = session.home / "rescue-backups"

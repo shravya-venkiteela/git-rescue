@@ -1,12 +1,13 @@
-"""Generate golden.json for a scenario: uv run python -m bench.make_golden <scenario-id>"""
+"""Generate golden.json for a scenario: uv run python -m bench.make_golden <scenario-id> [--heldout]"""
 import json
 import sys
 import tempfile
 from pathlib import Path
 from bench.gitenv import GitRepo
-from bench.loader import SCENARIOS_DIR, load
+from bench.loader import HELDOUT_DIR, SCENARIOS_DIR, load
 
-scenario_dir = SCENARIOS_DIR / sys.argv[1]
+args = [a for a in sys.argv[1:] if not a.startswith("--")]
+scenario_dir = (HELDOUT_DIR if "--heldout" in sys.argv else SCENARIOS_DIR) / args[0]
 if not (scenario_dir / "scenario.yaml").exists():
     sys.exit(f"No scenario at {scenario_dir}. Create scenario.yaml and setup.py first.")
 

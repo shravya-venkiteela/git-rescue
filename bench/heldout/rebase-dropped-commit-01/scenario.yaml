@@ -1,0 +1,30 @@
+id: rebase-dropped-commit-01
+source: https://stackoverflow.com/questions/27627527/git-rebase-interactive-is-silently-dropping-commits-while-attempting-to-reor
+category: rebase_dropped_commit
+recoverable: true
+
+user_message: >
+  I rebased my feature branch onto main and it went through fine, but now one
+  of my commits is missing. The one where I added the cart total just isn't
+  there anymore, and cart.py doesn't have that function. I still want the
+  branch on top of main, I just want that commit back.
+
+hidden_intent: >
+  feature stays rebased onto the new main, gains the "Add cart total" change
+  back (a new SHA is fine), keeps its other two commits; main is untouched.
+
+clarifications:
+  keep_the_rebase: "Yes, I want to keep the branch on top of main."
+  which_commit_missing: "The cart total one."
+  pushed_to_remote: "No, nothing is pushed."
+  current_branch_name: "I'm on feature."
+  commit_hash_known: "No, I don't know the hash."
+
+assertions:
+  - {type: branch_at_commit, label: main_new, branch: main}
+  - {type: commit_reachable_from_branch, label: main_new, branch: feature}
+  - {type: content_reachable_from_branch, label: total, branch: feature}
+  - {type: content_reachable_from_branch, label: model, branch: feature}
+  - {type: content_reachable_from_branch, label: tests, branch: feature}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

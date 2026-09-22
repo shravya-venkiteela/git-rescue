@@ -1,0 +1,26 @@
+id: branch-force-01
+source: TODO  # the link given was about merging the wrong branch; needs a git branch -f question
+category: branch_moved
+recoverable: true
+
+user_message: >
+  I ran a git branch command while I was on my feature branch and now main is
+  missing its last two commits. The search changes I made on main are gone
+  from it. Nothing is pushed. How do I get main back to how it was?
+
+hidden_intent: >
+  main back at its old tip (both search commits); feature untouched.
+  Which branch is checked out afterwards does not matter.
+
+clarifications:
+  command_you_ran: "Something like git branch -f main and a commit id. I meant a different branch."
+  which_commits_lost: "The last two on main, the search ones."
+  pushed_to_remote: "No, nothing is pushed."
+  current_branch_name: "I'm on feature."
+  commit_hash_known: "No, I don't know the hashes."
+
+assertions:
+  - {type: branch_at_commit, label: main_tip, branch: main}
+  - {type: branch_at_commit, label: feature_tip, branch: feature}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}

@@ -1,0 +1,26 @@
+id: git-clean-01
+source: https://stackoverflow.com/questions/9750049/is-it-still-possible-to-restore-deleted-untracked-files-in-git
+category: deleted_untracked
+recoverable: false
+
+user_message: >
+  I ran git clean -fd to clear out my build folder and it also deleted two new
+  files I'd been writing, search.py and search_test.py. I hadn't added them to
+  git yet. Can I get them back?
+
+hidden_intent: >
+  Untracked files deleted by git clean were never stored by git. The right
+  answer says so and changes nothing; .env (ignored, still present) must survive.
+
+clarifications:
+  files_ever_added_committed: "No, I never added or committed them."
+  stash_used: "No, I didn't stash anything."
+  pushed_to_remote: "No, nothing is pushed."
+  current_branch_name: "I'm on main."
+
+assertions:
+  - {type: says_unrecoverable}
+  - {type: branch_at_commit, label: base, branch: main}
+  - {type: untracked_file_preserved, path: .env, label: local}
+  - {type: head_attached}
+  - {type: no_operation_in_progress}
