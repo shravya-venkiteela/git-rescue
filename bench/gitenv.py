@@ -12,26 +12,9 @@ class GitError(RuntimeError):
             f"git {' '.join(args)} failed with exit code {result.returncode}\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
-def isolated_env(home: Path) -> dict[str, str]:
-        """Env for git with every source of outside config removed."""
-        env = {k:v for k,v in os.environ.items() if not k.startswith("GIT_")}
-        env.update(
-            {
-                "HOME": str(home),
-                "USERPROFILE": str(home),
-                "XDG_CONFIG_HOME": str(home / ".config"),
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CONFIG_GLOBAL": os.devnull,
-                "GIT_AUTHOR_NAME": "Scenario Author",
-                "GIT_AUTHOR_EMAIL": "author@example.com",
-                "GIT_COMMITTER_NAME": "Scenario Author",
-                "GIT_COMMITTER_EMAIL": "author@example.com",
-                "GIT_TERMINAL_PROMPT": "0",
-                "LC_ALL": "C",
-
-            }
-        )
-        return env
+#Defined in the library (src/git_rescue/gitenv.py), because the tool must not
+#import its own benchmark: the installed `git rescue` has no `bench` module.
+from src.git_rescue.gitenv import isolated_env  # noqa: E402,F401
 
 @dataclass
 class GitRepo:

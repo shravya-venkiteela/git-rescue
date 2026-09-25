@@ -5,8 +5,9 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from src.git_rescue import backup as backup_mod
-from src.git_rescue import risk as risk_mod
+from .gitenv import NON_INTERACTIVE, env_for
+from . import backup as backup_mod
+from . import risk as risk_mod
 
 
 @dataclass
@@ -32,11 +33,8 @@ class Outcome:
 
 
 def _env(date: str | None = None):
-    from bench.gitenv import isolated_env
-
-    env = isolated_env(Path(tempfile.gettempdir()) / "git-rescue-exec-home")
-    env.update({"GIT_EDITOR": ":", "GIT_SEQUENCE_EDITOR": ":", "GIT_PAGER": "cat",
-                "GIT_MERGE_AUTOEDIT": "no", "GIT_TERMINAL_PROMPT": "0"})
+    env = env_for(Path(tempfile.gettempdir()) / "git-rescue-exec-home")
+    env.update(NON_INTERACTIVE)
     if date:
         #Same clock for the preview and the real run, so a step that makes a
         #commit (cherry-pick, merge, commit) makes the SAME commit both times.

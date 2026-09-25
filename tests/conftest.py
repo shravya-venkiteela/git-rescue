@@ -31,3 +31,15 @@ def built(template, tmp_path):
         shutil.copytree(root, dest, symlinks=True)
         return GitRepo(path=dest / "repo", home=dest / "home"), dict(labels)
     return make
+
+
+@pytest.fixture(autouse=True)
+def sealed_git_environment():
+    """The CLI switches git to the person's own config and identity, through a
+    module-level flag. A test that ran the CLI used to leave that flag set, and
+    the next test's commits then used whatever config the machine had."""
+    from src.git_rescue import gitenv
+
+    gitenv.use_user_environment(False)
+    yield
+    gitenv.use_user_environment(False)

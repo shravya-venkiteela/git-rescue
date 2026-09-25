@@ -5,6 +5,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .gitenv import env_for
+
 
 @dataclass(frozen=True)
 class Tool:
@@ -15,9 +17,7 @@ class Tool:
 
 
 def _run(repo: Path, argv: list[str]) -> str:
-    from bench.gitenv import isolated_env  #scenario-safe env; same isolation everywhere
-
-    env = isolated_env(Path(tempfile.gettempdir()) / "git-rescue-tools-home")
+    env = env_for(Path(tempfile.gettempdir()) / "git-rescue-tools-home")
     env["GIT_OPTIONAL_LOCKS"] = "0"
     p = subprocess.run(argv, cwd=repo, env=env, capture_output=True, text=True,
                        encoding="utf-8", errors="replace", timeout=30)
@@ -29,9 +29,7 @@ def _valid_ref(repo: Path, ref: str) -> bool:
     if not ref or ref.startswith("-") or any(c in ref for c in " \t\n;|&$`"):
         return False
     argv = ["git", "rev-parse", "--verify", "--quiet", ref]
-    from bench.gitenv import isolated_env
-
-    env = isolated_env(Path(tempfile.gettempdir()) / "git-rescue-tools-home")
+    env = env_for(Path(tempfile.gettempdir()) / "git-rescue-tools-home")
     env["GIT_OPTIONAL_LOCKS"] = "0"
     return subprocess.run(argv, cwd=repo, env=env, capture_output=True, timeout=30).returncode == 0
 

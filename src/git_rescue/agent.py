@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from src.git_rescue import plan as plan_mod
-from src.git_rescue import tools as tools_mod
+from . import plan as plan_mod
+from . import tools as tools_mod
 
 INVESTIGATE_PROMPT = """You are git rescue. A developer's repository is broken.
 You are still INVESTIGATING. Look before you conclude: commits are often

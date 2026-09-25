@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from bench.harness.llm import OpenAICompatibleBackend, build_backend
+from src.git_rescue.llm import OpenAICompatibleBackend, build_backend
 
 
 def serve(responses):
@@ -68,7 +68,7 @@ def test_a_retry_that_succeeds_counts_its_attempts():
 def test_a_rate_limit_is_a_transport_error_not_a_bad_model(monkeypatch):
     """Free tiers answer 429 when you go too fast. That must never be
     scored as the model producing garbage."""
-    monkeypatch.setattr("bench.harness.llm.time.sleep", lambda s: None)
+    monkeypatch.setattr("src.git_rescue.llm.time.sleep", lambda s: None)
     server, _ = serve([(429, {"error": {"message": "quota exceeded"}})] * 3)
     backend = backend_for(server)
     backend.max_rate_limit_waits = 0
@@ -120,7 +120,7 @@ def test_the_gemini_preset_never_sends_seed(monkeypatch):
 
 def test_an_overloaded_provider_is_retried(monkeypatch):
     """Gemini answered 503 'high demand' mid-run. That is temporary."""
-    monkeypatch.setattr("bench.harness.llm.time.sleep", lambda s: None)
+    monkeypatch.setattr("src.git_rescue.llm.time.sleep", lambda s: None)
     server, _ = serve([(503, {"error": {"message": "high demand"}}), (200, completion('{"ready": true}'))])
     reply = backend_for(server).json_reply("x")
     assert reply.parsed == {"ready": True} and reply.attempts == 2
@@ -165,7 +165,7 @@ def test_other_400s_are_still_transport_errors():
     ("{broken", None),
 ])
 def test_lenient_object_parsing(text, expected):
-    from bench.harness.llm import _loads_object
+    from src.git_rescue.llm import _loads_object
     assert _loads_object(text) == expected
 
 
@@ -173,7 +173,7 @@ def test_a_rate_limit_waits_as_long_as_the_provider_says(monkeypatch):
     """Groq's TPM 429 says how long to wait. Waiting it out must not use up
     an attempt, and must not end the run."""
     slept = []
-    monkeypatch.setattr("bench.harness.llm.time.sleep", slept.append)
+    monkeypatch.setattr("src.git_rescue.llm.time.sleep", slept.append)
     limit = {"error": {"message": "Rate limit reached on tokens per minute (TPM): Limit 8000, "
                                   "Used 7146, Requested 1136. Please try again in 2.114999999s."}}
     server, _ = serve([(429, limit), (429, limit), (200, completion('{"ready": true}'))])
@@ -184,7 +184,7 @@ def test_a_rate_limit_waits_as_long_as_the_provider_says(monkeypatch):
 
 def test_a_daily_quota_is_not_waited_out(monkeypatch):
     slept = []
-    monkeypatch.setattr("bench.harness.llm.time.sleep", slept.append)
+    monkeypatch.setattr("src.git_rescue.llm.time.sleep", slept.append)
     daily = {"error": {"message": "tokens per day (TPD) limit. Please try again in 7m12s."}}
     server, _ = serve([(429, daily)] * 3)
     reply = backend_for(server).json_reply("x")
@@ -200,7 +200,7 @@ def test_a_daily_quota_is_not_waited_out(monkeypatch):
     ("quota exceeded", None, 5.0),
 ])
 def test_rate_limit_delay(body, header, expected):
-    from bench.harness.llm import rate_limit_delay
+    from src.git_rescue.llm import rate_limit_delay
     assert rate_limit_delay(body, header, 1) == pytest.approx(expected)
 
 
