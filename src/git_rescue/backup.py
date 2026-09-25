@@ -68,8 +68,16 @@ class Backup:
         return self.path / "repo"
 
 
-def create(repo: Path, note: str = "", root: Path | None = None) -> Backup:
-    """Copy the whole repository somewhere safe and record what was there."""
+RESCUE = "rescue"      #taken before a rescue runs: what `undo` goes back to
+SAFETY = "safety"      #taken by undo itself, so an undo can be undone
+
+
+def create(repo: Path, note: str = "", root: Path | None = None, kind: str = RESCUE) -> Backup:
+    """Copy the whole repository somewhere safe and record what was there.
+
+    kind marks why: `undo` must go back to the state before the RESCUE, not to
+    the copy undo took a moment earlier. Restoring the newest folder made a
+    second undo restore the state the first undo had just reverted."""
     root = root or BACKUP_ROOT
     key = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()[:12]
     stamp = time.strftime("%Y%m%dT%H%M%S")
@@ -89,6 +97,7 @@ def create(repo: Path, note: str = "", root: Path | None = None) -> Backup:
         "source": str(repo.resolve()),
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "note": note,
+        "kind": kind,
         "bytes": directory_size(dest / "repo"),
     }, indent=2), encoding="utf-8")
     return Backup(dest, manifest)
@@ -102,16 +111,28 @@ def restore(backup: Backup, repo: Path) -> None:
     default location: otherwise undoing a backup made under a different
     root would scatter copies in two places.
     """
-    create(repo, note=f"state before restoring {backup.path.name}", root=backup.path.parent.parent)
+    create(repo, note=f"state before restoring {backup.path.name}",
+           root=backup.path.parent.parent, kind=SAFETY)
     empty_directory(repo)
     shutil.copytree(backup.repo_copy, repo, symlinks=True, dirs_exist_ok=True)
 
 
-def latest_for(repo: Path, root: Path | None = None) -> Backup | None:
+def _kind_of(manifest: Path) -> str:
+    try:
+        return json.loads(manifest.read_text(encoding="utf-8")).get("kind", RESCUE)
+    except (OSError, json.JSONDecodeError):
+        return RESCUE      #backups made before kinds existed were all rescues
+
+
+def latest_for(repo: Path, root: Path | None = None, kind: str | None = RESCUE) -> Backup | None:
+    """The newest backup of this repository, by default the newest one taken
+    before a rescue. kind=None means "the newest of any kind"."""
     root = root or BACKUP_ROOT
     key = hashlib.sha256(str(repo.resolve()).encode()).hexdigest()[:12]
     folder = root / key
     if not folder.is_dir():
         return None
-    stamps = sorted(p for p in folder.iterdir() if p.is_dir())
-    return Backup(stamps[-1], stamps[-1] / "manifest.json") if stamps else None
+    saved = [Backup(p, p / "manifest.json") for p in sorted(folder.iterdir()) if p.is_dir()]
+    if kind is not None:
+        saved = [b for b in saved if _kind_of(b.manifest) == kind]
+    return saved[-1] if saved else None

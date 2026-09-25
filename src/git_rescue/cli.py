@@ -75,8 +75,9 @@ def undo(repo: Path = typer.Option(None, help="repository to roll back")) -> Non
     typer.echo(f"Restoring the copy taken at {details['created']}: {details.get('note') or 'no note'}")
     if not typer.confirm("This replaces the repository with that copy. Continue?"):
         raise typer.Exit(code=1)
-    #The undo is backed up first, so an undo can itself be undone.
-    backup_mod.create(root, note="before undo")
+    #The undo is backed up first, so an undo can itself be undone. It is marked
+    #as a safety copy so the next undo does not treat it as a rescue to revert.
+    backup_mod.create(root, note="before undo", kind=backup_mod.SAFETY)
     backup_mod.restore(saved, root)
     typer.secho("Restored.", fg="green")
 

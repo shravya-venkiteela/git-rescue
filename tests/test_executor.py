@@ -95,8 +95,11 @@ def test_undo_is_itself_undoable(built):
     out = executor.execute(repo.path, plan_of("git reset --hard HEAD~1"), confirm=YES, backup_root=root)
     after_reset = take_snapshot(repo.path)
     backup_mod.restore(out.backup, repo.path)
-    newest = backup_mod.latest_for(repo.path, root=root)
-    assert take_snapshot(newest.repo_copy) == after_reset
+    #The copy restore() takes of the CURRENT state is a safety copy, asked for
+    #by kind: plain latest_for() answers "what should undo go back to", which
+    #is the pre-rescue state, not this one.
+    undone = backup_mod.latest_for(repo.path, root=root, kind=backup_mod.SAFETY)
+    assert take_snapshot(undone.repo_copy) == after_reset
 
 
 def test_safe_plans_need_no_backup(built):
@@ -211,3 +214,26 @@ def test_restore_works_while_the_repository_is_the_working_directory(tmp_path, m
     backup_mod.restore(saved, repo.path)
     assert (repo.path / "a.txt").read_text() == "one\n"
     assert repo.git("log", "--format=%s") == "first"
+
+
+def test_undo_goes_back_to_before_the_rescue_not_to_its_own_safety_copy(tmp_path):
+    """Two undos in a row used to restore the state the first undo reverted:
+    undo copies the repository before restoring, and that copy was then the
+    newest backup. A real run of `git rescue undo` hit exactly this."""
+    from bench.gitenv import GitRepo
+    from src.git_rescue import backup as backup_mod
+
+    root = tmp_path / "backups"
+    repo = GitRepo.init(tmp_path / "repo", tmp_path / "home")
+    repo.commit_file("a.txt", "before the rescue\n", "first")
+
+    before_rescue = backup_mod.create(repo.path, note="before a destructive plan", root=root)
+    repo.commit_file("a.txt", "after the rescue\n", "the rescue")
+
+    #What `git rescue undo` does, twice.
+    backup_mod.create(repo.path, note="before undo", root=root, kind=backup_mod.SAFETY)
+    backup_mod.restore(backup_mod.latest_for(repo.path, root=root), repo.path)
+    assert (repo.path / "a.txt").read_text() == "before the rescue\n"
+
+    chosen = backup_mod.latest_for(repo.path, root=root)
+    assert chosen.path == before_rescue.path, "undo picked a safety copy, not the pre-rescue state"
