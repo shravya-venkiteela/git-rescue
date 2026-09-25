@@ -96,6 +96,11 @@ def rescue(
     """Diagnose and fix the current repository."""
     if ctx.invoked_subcommand is not None:
         return
+    #`git rescue undo` arrives here with problem="undo": this command takes a
+    #free-text argument, so the parser reads that word as the problem and the
+    #agent starts investigating "undo". The subcommand wins.
+    if problem.strip().lower() == "undo":
+        return undo(repo=repo)
     from .agent import RescueAgent
 
     #A real repository, so git uses the person's own config and identity.

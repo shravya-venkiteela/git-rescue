@@ -105,3 +105,22 @@ def test_the_cli_uses_the_persons_own_git_identity(repo, monkeypatch):
     run(r, "my branch is gone", stdin="y\n")
     env = gitenv.env_for(Path("/tmp/whatever"))
     assert env.get("GIT_AUTHOR_NAME") == "Real Person"
+
+
+def test_undo_is_a_command_not_a_problem_description(repo, monkeypatch):
+    """`git rescue undo` used to be read as "the problem is: undo", and the
+    agent started investigating instead of restoring the backup."""
+    r, labels, replies = repo
+    asked = []
+    monkeypatch.setattr(cli.backup_mod, "latest_for", lambda root, **kw: asked.append(root))
+    result = run(r, "undo")
+    assert asked, "undo should have looked for a backup"
+    assert "no backup found" in result.output
+    assert "Looking at the repository" not in result.output
+
+
+def test_a_problem_that_merely_mentions_undo_still_investigates(repo):
+    r, labels, replies = repo
+    replies += [{"tool": "status"}, plan_reply(f"git branch feature {FEAT2}")]
+    result = run(r, "--dry-run", "I want to undo my last commit")
+    assert "Looking at the repository" in result.output

@@ -9,27 +9,38 @@ of the repository, and shown to you before anything runs. Destructive plans copy
 the whole repository first, and `git rescue undo` puts it back.
 
 ```
-$ git rescue "I ran git reset --hard and my last two commits are gone"
+$ git rescue "I ran git reset --hard and lost my last commit"
 Looking at the repository (read-only)...
-  ran operation_state
   ran reflog
 
 Diagnosis
-  A reset --hard moved main back two commits. Both are still in the reflog.  (confidence: high)
+  A hard reset moved HEAD back to the initial commit, leaving the last commit
+  (724932c) only reachable via reflog  (confidence: high)
+Cannot be recovered
+  - Any uncommitted changes that existed before the reset
 Plan
-  1. git reset --hard ad327ae
+  1. git reset --hard 724932c
      DESTRUCTIVE: git reset --hard can make work unreachable
-     why: put main back where it was before the reset
+     why: Restore HEAD to the lost commit, bringing back its snapshot
+  2. git branch recovered 724932c
+     reversible: git branch changes state but leaves work reachable
+     why: Create a permanent reference to the recovered commit
 
 What this would change (tried on a copy first)
-  - # branch.oid 190943ae433519cc227b8add426bc014ca38ee7c
-  + # branch.oid ad327ae1c7a0dce0c4cf130695c2aff945c4efc7
+  - # branch.oid 8d607096779960b4f89162ecaa48cb71cf1e335f
+  - refs/heads/master 8d607096779960b4f89162ecaa48cb71cf1e335f
+  + # branch.oid 724932c156ffe3c76be4247b74edec75d7c8ac7e
+  + refs/heads/master 724932c156ffe3c76be4247b74edec75d7c8ac7e
+  + refs/heads/recovered 724932c156ffe3c76be4247b74edec75d7c8ac7e
   The whole repository is copied before this runs; `git rescue undo` puts it back.
-Run this plan? [y/N]:
+Run this plan? [y/N]: y
+
+Done. A hard reset moved HEAD back to the initial commit, leaving the last commit
+(724932c) only reachable via reflog
+Backup: ~/.git-rescue/backups/df1e0363b10c/20260924T231536  (undo with `git rescue undo`)
 ```
 
-<sub>Session layout as the CLI prints it; the diagnosis, SHAs and preview diff are
-from a recorded run of the `reset-hard-committed-01` scenario.</sub>
+<sub>A real session, wrapped to fit. The model here is gpt-oss-120b via Groq.</sub>
 
 ## Results
 
