@@ -1,5 +1,7 @@
 # git rescue
 
+[![tests](https://github.com/shravya-venkiteela/git-rescue/actions/workflows/tests.yml/badge.svg)](https://github.com/shravya-venkiteela/git-rescue/actions/workflows/tests.yml)
+
 Git has a handful of commands that delete work without a confirmation, and most
 advice about recovering from them is written by someone who can't see your
 repository. `git rescue` can: it investigates read-only, proposes a plan,
