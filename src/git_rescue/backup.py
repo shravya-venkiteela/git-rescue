@@ -28,6 +28,25 @@ def remove_tree(path: Path) -> None:
         shutil.rmtree(path, onerror=lambda f, p, e: _on_error(f, p, e))
 
 
+def empty_directory(path: Path) -> None:
+    """Delete everything INSIDE path, but never path itself.
+
+    Removing the folder and copying a fresh one in its place fails the moment
+    anything holds it open, which on Windows includes the shell the person is
+    standing in: rmtree deletes the contents, then cannot remove the folder,
+    and the repository is left destroyed. Emptying it in place cannot do that.
+    """
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            remove_tree(child)
+        else:
+            try:
+                child.unlink()
+            except PermissionError:
+                os.chmod(child, stat.S_IWRITE)
+                child.unlink()
+
+
 def directory_size(path: Path) -> int:
     total = 0
     for root, _, files in os.walk(path):
@@ -84,8 +103,8 @@ def restore(backup: Backup, repo: Path) -> None:
     root would scatter copies in two places.
     """
     create(repo, note=f"state before restoring {backup.path.name}", root=backup.path.parent.parent)
-    remove_tree(repo)
-    shutil.copytree(backup.repo_copy, repo, symlinks=True)
+    empty_directory(repo)
+    shutil.copytree(backup.repo_copy, repo, symlinks=True, dirs_exist_ok=True)
 
 
 def latest_for(repo: Path, root: Path | None = None) -> Backup | None:

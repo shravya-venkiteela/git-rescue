@@ -168,3 +168,46 @@ def test_a_plan_that_makes_commits_matches_its_preview(built, monkeypatch):
         {"command": "git commit --allow-empty -m 'rescue checkpoint'", "purpose": "p", "risk": "reversible"}]})
     outcome = ex.execute(repo.path, plan)
     assert outcome.ok and outcome.verified, outcome.reason
+
+
+def test_restore_keeps_the_repository_folder_itself(tmp_path):
+    """The folder must survive: deleting and recreating it fails whenever
+    anything holds it open (on Windows, the shell the person is standing in),
+    and that failure left the repository destroyed rather than restored."""
+    import os
+
+    from bench.gitenv import GitRepo
+    from src.git_rescue import backup as backup_mod
+
+    repo = GitRepo.init(tmp_path / "repo", tmp_path / "home")
+    repo.commit_file("a.txt", "one\n", "first")
+    saved = backup_mod.create(repo.path, note="before", root=tmp_path / "backups")
+    (repo.path / "junk.txt").write_text("written after the backup")
+
+    before = os.stat(repo.path)
+    backup_mod.restore(saved, repo.path)
+    after = os.stat(repo.path)
+
+    assert (before.st_ino, before.st_dev) == (after.st_ino, after.st_dev), \
+        "the repository folder was replaced instead of emptied"
+    assert not (repo.path / "junk.txt").exists()
+    assert (repo.path / "a.txt").read_text() == "one\n"
+
+
+def test_restore_works_while_the_repository_is_the_working_directory(tmp_path, monkeypatch):
+    """What the CLI actually does: the person runs `git rescue undo` from
+    inside the repository."""
+    import os
+
+    from bench.gitenv import GitRepo
+    from src.git_rescue import backup as backup_mod
+
+    repo = GitRepo.init(tmp_path / "repo", tmp_path / "home")
+    repo.commit_file("a.txt", "one\n", "first")
+    saved = backup_mod.create(repo.path, note="before", root=tmp_path / "backups")
+    repo.commit_file("a.txt", "two\n", "second")
+
+    monkeypatch.chdir(repo.path)
+    backup_mod.restore(saved, repo.path)
+    assert (repo.path / "a.txt").read_text() == "one\n"
+    assert repo.git("log", "--format=%s") == "first"
