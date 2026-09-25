@@ -1,12 +1,13 @@
 # git rescue
 
-An LLM agent that recovers broken git repositories, and a benchmark that measures
-whether it works and whether it ever makes things worse.
+Git has a handful of commands that delete work without a confirmation, and most
+advice about recovering from them is written by someone who can't see your
+repository. `git rescue` can: it investigates read-only, proposes a plan,
+previews it on a copy, and waits for you to say yes. Anything it does, it can
+undo.
 
-The agent may only **read** while it investigates. It then proposes a plan, every
-step of which is classified by a risk table it does not control, tried on a copy
-of the repository, and shown to you before anything runs. Destructive plans copy
-the whole repository first, and `git rescue undo` puts it back.
+Then I measured it against the alternatives, because a recovery tool that's
+usually right is not obviously better than nothing.
 
 ```
 $ git rescue "I ran git reset --hard and lost my last commit"
@@ -42,131 +43,173 @@ Backup: ~/.git-rescue/backups/df1e0363b10c/20260924T231536  (undo with `git resc
 
 <sub>A real session, wrapped to fit. The model here is gpt-oss-120b via Groq.</sub>
 
-## Results
+## Does it actually work?
 
-Three systems, one model (`openai/gpt-oss-120b` via Groq), same scenarios, same
-simulated user. Full tables in [`results/tables/`](results/tables); every run's
-transcript is in `results/runs/`.
+I wrote 9 scenarios from real Stack Overflow questions and used them while
+building the agent. Then, once it was finished, I wrote 5 more, ran everything
+on those exactly once, and reported that. The second set is the honest number:
+I never saw those failures, so I couldn't tune for them.
 
-**Held-out scenarios** (written after the agent was finished, run once, never
-used for development). 5 scenarios x 3 passes:
+Three systems, all on the same model (`gpt-oss-120b`), on the held-out five:
 
-| system | recoverable (9 runs) | unrecoverable (6 runs) | data loss |
-|---|---|---|---|
-| **git rescue** | **8/9 (89%)** | 6/6 | 0/15 |
-| unrestricted shell | 7/9 (78%) | 6/6 | 0/15 |
-| description-only advice | 2/9 (22%) | 5/6 | 0/15 |
+| | recovers what can be recovered | says so when it can't | destroys data |
+|:---|:---:|:---:|:---:|
+| **git rescue** | **8/9** | **6/6** | **0/15** |
+| the same model with a shell | 7/9 | 6/6 | 0/15 |
+| the same model giving advice only | 2/9 | 5/6 | 0/15 |
 
-**Development scenarios** (9 scenarios x 3 passes), where the agent's failures
-were read and fixed, so its numbers here are flattered:
+The first row isn't the interesting one. Giving a model a shell recovers about as
+often as my agent does, and I'm not going to pretend otherwise. The difference
+showed up in a single run out of 42: on the abandoned-rebase scenario, the shell
+ran `git rebase --abort`, which fixed it, and then kept going. Five commands
+later it ran `git reset --hard HEAD@{2}` and threw the feature branch away. It
+solved the problem and then destroyed the work, in the same session, with nobody
+to stop it. That's the failure my design is meant to make impossible, and it's
+one incident, not a rate. I'd rather show you the transcript than quote a
+percentage.
 
-| system | recovered | data loss | tokens/run |
-|---|---|---|---|
-| **git rescue** | 20/27 (74%) | 0/27 | not recorded |
-| unrestricted shell | 19/27 (70%) | **1/27** | ~6,800 |
-| description-only advice | 3/27 (11%) | 0/27 | ~1,500 |
+A few other things worth saying out loud:
 
-What this does and does not show:
+- Against advice-only, the gap is real: **8/9 versus 2/9** on problems neither
+  system had seen. Looking at the repository is worth roughly four times as much
+  as guessing about it.
+- The model returned a completely empty reply in 7 of my 42 runs. An agent that
+  makes six model calls per problem is exposed to that more than a baseline
+  making one call per turn. That's a genuine cost of the design.
+- Two of the five held-out scenarios can't be recovered at all: the work was
+  never committed. The only correct answer is to say so and change nothing,
+  which is also the easiest thing for a tool to get wrong by inventing a fix.
 
-- **Against the baseline most people actually use** (paste the problem into a
-  chatbot, run what it says), the agent recovers about four times as often on
-  unseen problems, because it can look at the repository instead of guessing.
-- **Against a model with an unrestricted shell**, recovery is a tie: 89% vs 78%
-  held-out, 74% vs 70% on development scenarios, both well inside the run-to-run
-  noise. The agent's argument is not that it fixes more.
-- **The shell baseline destroyed a branch once in 42 runs; the agent never did.**
-  One incident is not a rate. The transcript is worth more than the number: on
-  `rebase-conflict-abort` the shell ran `git rebase --abort`, which fixed the
-  problem, then kept going for five more commands and ended with
-  `git reset --hard HEAD@{2}`, which threw the feature branch away. An agent that
-  commits to a reviewed plan cannot do that.
-- **gpt-oss-120b returns an empty reply often enough to matter**: 6 of 27
-  development runs and 1 of 15 held-out runs ended with no usable output from the
-  model. More model calls means more chances to fail this way, which is a real
-  cost of the agent design; the shell baseline, with one call per turn, never hit it.
+<details>
+<summary>The development scenarios, for completeness (9 scenarios, 3 passes each)</summary>
+
+<br>
+
+| system | recovered | data loss |
+|---|---|---|
+| git rescue | 20/27 (74%) | 0/27 |
+| unrestricted shell | 19/27 (70%) | 1/27 |
+| advice only | 3/27 (11%) | 0/27 |
+
+These flatter my agent: seven of its fixes came from reading its failures on
+exactly these scenarios. Every per-scenario table, per-pass number and transcript
+is in [`results/tables/`](results/tables) and [`results/runs/`](results/runs).
+
+</details>
 
 ## How it works
 
-1. **Investigate (read-only).** The agent may call a fixed set of read-only tools
-   (`status`, `reflog`, `dangling`, `show`, `operation_state`, ...). Parameters are
-   validated; it never composes a command of its own. Budget: 6 look-ups.
-2. **Plan.** It must return JSON: a diagnosis, a confidence, numbered steps with a
-   purpose and a claimed risk, and anything it believes is unrecoverable.
-   Placeholders (`<sha>`), shell operators (`&&`), and non-git commands are
-   rejected, with the reason fed back so it can correct itself.
-   A plan with no steps is valid: "this cannot be recovered" is often the answer.
-3. **Classify.** A risk table, not the model, decides what each step is: safe,
-   reversible, destructive, or blocked. Anything unknown counts as destructive.
-   `gc`, `prune` and `reflog expire/delete` are blocked outright: they delete the
-   evidence recovery depends on.
-4. **Preview.** The whole plan runs on a copy of the repository first. If it fails
-   there, nothing touches the real one, and the error goes back to the agent for
-   one corrected attempt.
-5. **Back up, run, verify.** Destructive plans copy the repository first. After
-   running, the result is compared with the preview; a mismatch is reported rather
-   than hidden. `git rescue undo` restores the copy, and the undo is itself backed
-   up first.
+The whole design is one idea: the model decides *what* to do, and code decides
+whether that's allowed to happen.
+
+**1. It investigates, read-only.** The model can call `status`, `reflog`,
+`dangling`, `show` and a few others. It never writes a command itself; it picks a
+tool and passes parameters that get validated. Six look-ups by default.
+
+**2. It writes a plan, in strict JSON.** A diagnosis, numbered steps with a
+purpose and a claimed risk, and a list of anything it believes is gone for good.
+Placeholders like `<sha>`, shell operators, and anything that isn't a git command
+get rejected, with the reason handed back so it can fix its own plan.
+
+**3. A risk table classifies every step.** Not the model: a table it doesn't
+control. Safe, reversible, destructive, or blocked, and anything unrecognised
+counts as destructive. `gc`, `prune` and `reflog expire` are blocked outright,
+because they delete the very thing recovery reads.
+
+**4. The plan runs on a copy first.** If it fails there, your repository is never
+touched, and the error goes back to the model for one corrected attempt. This is
+also where a plan that "looks fine" gets caught: one model added a tidy-up step
+that deleted the branch it had just created.
+
+**5. Then it backs up, runs, and checks.** Destructive plans copy the whole
+repository first. Afterwards the result is compared against the preview, and a
+mismatch is reported rather than hidden. `git rescue undo` restores the copy, and
+the undo takes its own copy first.
+
+One thing I had to fix twice: **"this cannot be recovered" has to be a valid
+answer.** Work that was never committed or staged is genuinely gone, and a tool
+that invents a recovery for it is worse than useless. My plan validator used to
+reject a plan with no steps as malformed, so the agent literally could not say
+it.
 
 ## The benchmark
 
-`bench/` is a benchmark, not a demo. Each scenario builds a real broken repository
-from a script with pinned timestamps, so every run starts from byte-identical
-SHAs (checked against a recorded `golden.json`).
-
-- **Scenarios** (`bench/scenarios/`, 9 development; `bench/heldout/`, 5 held-out):
-  deleted branch, detached-head commits, dropped stash, `reset --hard` over commits
-  and over staged work, an abandoned rebase, commits on the wrong branch, a bad
-  amend, an accidental merge from a pull, discarded uncommitted edits, `git clean`,
-  a rebase that dropped a commit, a force-moved branch, and a file deleted in a
-  commit. Each is based on a real Stack Overflow question (one exception is
-  labelled `source: none`).
-- **Systems**: the agent; `description_only` (the model sees only the user's
-  message, like a chatbot); `unrestricted_shell` (the model runs one command per
-  turn and sees its output, up to 15 turns); plus `reference`, `wrong_fix` and
-  `do_nothing` fakes that keep the benchmark honest.
-- **The user is simulated deterministically.** It answers only from the scenario's
-  clarifications, and when a question matches two answers equally well it says
-  "I don't know" rather than guessing, because a confidently wrong answer
-  corrupts the run.
-- **Success is per-scenario assertions**, not a diff: commits reachable from the
-  right branch, files matching their old content, untracked bystander files still
-  present, HEAD attached, no operation left in progress. Content is matched by
-  patch id, so a cherry-picked or rebased copy still counts.
-- **Data loss is measured separately from success.** Every object reachable before
-  the run is checked afterwards and graded: intact, in a backup, reflog-only,
-  hidden, or gone. Anything at reflog-only or worse counts as practical loss, even
-  when the scenario was otherwise "recovered".
+Every scenario builds a real broken repository from a script, with pinned
+timestamps, so the commit SHAs come out byte-identical on every machine. They're
+checked against a recorded `golden.json`, so a scenario that drifts fails loudly
+instead of quietly changing what I'm measuring.
 
 ```bash
 uv run python -m bench.harness.runner --system rescue_agent --provider groq --repeats 3
 uv run python -m bench.report results/tables/out.md results/runs/<run-dir> [...]
 ```
 
-## Limitations
+<details>
+<summary>What's in it: scenarios, baselines, and how I decide a run succeeded</summary>
 
-- **One model.** Everything here is gpt-oss-120b. The design is model-agnostic
-  (Ollama, Groq, Gemini and OpenRouter backends exist), but the numbers are not.
-- **Small samples.** 27 development and 15 held-out runs per system. A single pass
-  of 9 has swung by two recoveries with nothing changed, so per-pass numbers are
-  reported alongside totals rather than hidden in an average.
-- **The agent's development scenarios are not a fair test of it.** Seven fixes came
-  from reading its failures on them. That is why the held-out set exists.
-- **"It cannot be recovered" is graded by keyword matching** on what the system
-  told the user. It is crude and could be gamed by a system that says the right
-  words and then does the wrong thing; the repository assertions in the same
-  scenario catch that case.
-- **Nothing here touches a remote.** `push`, `clone`, `config` and anything that
-  can run another program are blocked, and no scenario involves a shared branch.
+<br>
+
+**Scenarios.** 9 development ([`bench/scenarios/`](bench/scenarios)), 5 held-out
+([`bench/heldout/`](bench/heldout)): a deleted branch, commits made on a detached
+HEAD, a dropped stash, `reset --hard` over commits and over staged work, an
+abandoned rebase, commits on the wrong branch, a bad amend, an accidental merge
+from a pull, discarded uncommitted edits, `git clean -fd`, a rebase that silently
+dropped a commit, a force-moved branch, and a file deleted in a commit. Each one
+links the Stack Overflow question it came from; one has no good match and says so.
+
+**Baselines.** `description_only` sees only your message, like pasting into a
+chatbot. `unrestricted_shell` runs one command per turn and sees its output, up
+to 15 turns. There are also `reference`, `wrong_fix` and `do_nothing` fakes,
+which exist to catch a benchmark that passes things it shouldn't.
+
+**The simulated user is deterministic.** It answers from the scenario's
+clarifications, and if a question matches two answers equally well it says "I
+don't know" instead of picking one. It used to pick alphabetically, which meant
+it answered "I'm on main" to "what's your feature branch called?" four times in
+a row and sank a run that deserved better.
+
+**Success is per-scenario assertions**, never a diff: are the commits reachable
+from the right branch, does the file match its old content, is the untracked file
+the user never mentioned still there, is HEAD attached, is there an operation
+left half-finished. Content is matched by patch id, so a cherry-picked copy of a
+commit still counts.
+
+**Data loss is scored separately from success.** Everything reachable before the
+run is graded afterwards: intact, in a backup, reflog-only, hidden, or gone.
+Reflog-only or worse counts as loss even if the scenario otherwise passed, since
+a reflog entry is a thing that expires.
+
+</details>
+
+## What I'd want a reviewer to push on
+
+- **It's one model.** Everything here is `gpt-oss-120b` through Groq. The
+  backends are swappable (Ollama, Gemini, OpenRouter), the numbers aren't.
+- **The samples are small.** 15 held-out runs per system. A single pass of 9 has
+  swung by two recoveries with nothing changed, which is why I report every pass
+  rather than an average that hides it.
+- **The development set is tuned-on**, and I say so rather than quoting 74% as if
+  it meant the same thing as the held-out number.
+- **"It can't be recovered" is graded by keyword matching** on what the system
+  said. It's crude. A system could say the right words and do the wrong thing,
+  though the repository assertions in the same scenario would catch that.
+- **I tested the library well and the command-line entry point not at all**,
+  until I finally ran it by hand. Five bugs were waiting there, two of which
+  could damage someone's repository, including an undo that deleted the folder it
+  was restoring. They all have tests now, but the lesson was the seam, not the
+  bugs.
 
 ## Running it
 
 ```bash
 uv sync
-$env:GROQ_API_KEY = "gsk_..."        # or GEMINI_API_KEY / OPENROUTER_API_KEY; or --provider ollama
-uv run git-rescue "my commits disappeared"      # options come before the problem text
+$env:GROQ_API_KEY = "gsk_..."     # or GEMINI_API_KEY / OPENROUTER_API_KEY, or --provider ollama
+
+uv run git-rescue "my commits disappeared"        # options go before the problem text
 uv run git-rescue --dry-run "my commits disappeared"
 uv run git-rescue undo
-uv run pytest                                   # 458 tests, no API key needed
+
+uv run pytest                                     # 465 tests, no API key needed
 ```
 
-Keys are read from the environment only, never from a file in the repository.
+Keys are read from the environment, never from a file in the repo.

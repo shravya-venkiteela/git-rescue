@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    # Both, because the scenarios build real repositories and the tool is used
+    # on Windows: three bugs so far were Windows-only (file locking, line
+    # endings, paths).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Show the git version the scenarios will build with
+        run: git --version
+      - name: Tests
+        # No API key: every test scripts the model instead of calling one.
+        run: uv run pytest -q
