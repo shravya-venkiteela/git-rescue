@@ -1,3 +1,5 @@
+> **Early experiment, superseded.** Run on a local `qwen2.5:7b` before the agent existed, to decide whether it was worth building. The README's numbers all come from `gpt-oss-120b` (see `../dev-set-groq-gpt-oss-120b.md` and `../heldout-groq-gpt-oss-120b.md`).
+
 # B2 unrestricted shell, qwen2.5:7b, N=9, 2026-09-12
 
 Same model as B1, but it runs one command per turn and SEES the output

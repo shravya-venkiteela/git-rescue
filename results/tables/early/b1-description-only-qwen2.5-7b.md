@@ -1,3 +1,5 @@
+> **Early experiment, superseded.** Run on a local `qwen2.5:7b` before the agent existed, to decide whether it was worth building. The README's numbers all come from `gpt-oss-120b` (see `../dev-set-groq-gpt-oss-120b.md` and `../heldout-groq-gpt-oss-120b.md`).
+
 # B1 description-only, qwen2.5:7b, N=9, 1 run each, 2026-09-12
 
 | system | recovered | practical loss | absolute loss | unparsed |

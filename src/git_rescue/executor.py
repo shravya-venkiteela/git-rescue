@@ -51,8 +51,31 @@ def _run(repo: Path, argv: list[str], date: str | None = None) -> subprocess.Com
                           errors="replace", timeout=60)
 
 
+def _worktree_content(repo: Path) -> str:
+    """The content of every file that differs from the index, plus untracked
+    files (ignored files excluded). `status` only says a file is modified, not
+    WHAT is in it, so a real run that wrote different bytes than the preview
+    (same files touched, same refs) used to pass verification. hash-object
+    without -w computes the id and writes nothing to the repository."""
+    env = _env()
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    listed = subprocess.run(["git", "ls-files", "-z", "--modified", "--others", "--exclude-standard"],
+                            cwd=repo, env=env, capture_output=True, timeout=30)
+    #A deleted file shows up as modified; status already reports it.
+    paths = sorted({p for p in listed.stdout.decode("utf-8", "replace").split("\0")
+                    if p and (repo / p).is_file()})
+    if not paths:
+        return ""
+    hashed = subprocess.run(["git", "hash-object", "--stdin-paths"], cwd=repo, env=env,
+                            input="\n".join(paths) + "\n", capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=60)
+    ids = hashed.stdout.split()
+    return "\n".join(f"content {path} {oid}" for path, oid in zip(paths, ids))
+
+
 def fingerprint(repo: Path) -> str:
-    """What the repository looks like now: refs, HEAD, status. Comparing two
+    """What the repository looks like now: refs, HEAD, status, and the content
+    of changed and untracked files. Comparing two
     fingerprints is how the shadow run is checked against the real one."""
     parts = []
     for argv in (["git", "for-each-ref", "--format=%(refname) %(objectname)"],
@@ -63,6 +86,7 @@ def fingerprint(repo: Path) -> str:
         p = subprocess.run(argv, cwd=repo, env=env, capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=30)
         parts.append(p.stdout.strip())
+    parts.append(_worktree_content(repo))
     return "\n".join(parts)
 
 

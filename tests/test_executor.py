@@ -237,3 +237,34 @@ def test_undo_goes_back_to_before_the_rescue_not_to_its_own_safety_copy(tmp_path
 
     chosen = backup_mod.latest_for(repo.path, root=root)
     assert chosen.path == before_rescue.path, "undo picked a safety copy, not the pre-rescue state"
+
+
+def test_fingerprint_sees_file_content_not_just_file_status(built):
+    """`status` says an untracked file is there, not what is in it. Two
+    different contents must give two different fingerprints."""
+    repo, _ = built(SCENARIOS["reset-hard-committed-01"])
+    notes = repo.path / "notes.txt"
+    notes.write_text("first version\n", encoding="utf-8")
+    one = executor.fingerprint(repo.path)
+    notes.write_text("second version\n", encoding="utf-8")
+    two = executor.fingerprint(repo.path)
+    assert one != two
+    assert "content notes.txt" in executor._diff(one, two)
+
+
+def test_a_real_run_that_differs_from_the_preview_only_in_content_is_caught(built, monkeypatch):
+    """Same refs, same status, different bytes: this used to verify."""
+    repo, labels = built(SCENARIOS["reset-hard-committed-01"])
+    real_apply = executor._apply
+
+    def apply_then_tamper(path, steps, date=None):
+        results, ok = real_apply(path, steps, date)
+        if path == repo.path:                       # the real run, not the copy
+            (path / "notes.txt").write_text("not what the preview showed\n", encoding="utf-8")
+        return results, ok
+
+    monkeypatch.setattr(executor, "_apply", apply_then_tamper)
+    out = executor.execute(repo.path, plan_of(f"git branch recovered {labels['target']}"),
+                           confirm=YES, backup_root=repo.path.parent / "bk")
+    assert not out.ok and not out.verified
+    assert "differs from the preview" in out.reason

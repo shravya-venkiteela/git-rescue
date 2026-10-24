@@ -94,8 +94,12 @@ A few other things worth saying out loud:
 | advice only | 3/27 (11%) | 0/27 |
 
 These flatter my agent: seven of its fixes came from reading its failures on
-exactly these scenarios. Every per-scenario table, per-pass number and transcript
-is in [`results/tables/`](results/tables) and [`results/runs/`](results/runs).
+exactly these scenarios. Every per-scenario table and per-pass number is in
+[`results/tables/`](results/tables). Full run transcripts are written to
+`results/runs/` when you run the benchmark; they aren't committed because of
+their size. The two tables in [`results/tables/early/`](results/tables/early)
+are from a smaller local model (`qwen2.5:7b`), run before the agent existed;
+none of the numbers above come from them.
 
 </details>
 
@@ -211,7 +215,7 @@ uv run git-rescue "my commits disappeared"        # options go before the proble
 uv run git-rescue --dry-run "my commits disappeared"
 uv run git-rescue undo
 
-uv run pytest                                     # 465 tests, no API key needed
+uv run pytest                                     # 467 tests, no API key needed
 ```
 
 Keys are read from the environment, never from a file in the repo.
